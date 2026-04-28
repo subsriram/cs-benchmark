@@ -74,12 +74,12 @@ This is a one-shot tool. The point is to avoid hand-maintaining 20 specs and to 
 
 Two orthogonal axes, both env-gated in the codesurgeon engine. **One binary, env-gated variants** — much faster to iterate than rebuilding per variant.
 
-### Strategy axis — `CS_REVERSE_EXPAND_STRATEGY`
+### Strategy axis — `CS_EXPAND_STRATEGY`
 
 How candidates are ranked **within** a walk:
 
 ```
-CS_REVERSE_EXPAND_STRATEGY ∈ {
+CS_EXPAND_STRATEGY ∈ {
   none,         # baseline: pre-#67, no reverse-expand at all
   v0,           # fixed fan_out=5, depth=3 (#67)
   v1a,          # density-aware fan-out alone
@@ -161,7 +161,7 @@ No claude, no MCP, no API spend. Per (variant, task):
 ```python
 env = {
     "CS_WORKSPACE": warm_workspace_for(task),
-    "CS_REVERSE_EXPAND_STRATEGY": variant.strategy,
+    "CS_EXPAND_STRATEGY": variant.strategy,
 }
 capsule_json = subprocess.check_output(
     [CS_BIN, "context", task.query,
@@ -214,7 +214,7 @@ These are conclusions the agent-in-the-loop runs structurally cannot produce —
 
 1. **`codesurgeon context --json`** — landed in codesurgeon (this PR). Verify it's on the binary at `$CODESURGEON_BIN` before starting the panel work.
 2. **`codesurgeon impact --json`** — does not yet exist. Either add it (small change in `cs-cli` mirroring the `context --json` pattern), or have the harness parse the markdown output for the impact step. Prefer adding `--json`.
-3. **`CS_REVERSE_EXPAND_STRATEGY` env-var gate** — does not exist yet. Implementation: read once in `reverse_expand_from_anchors`, branch on the variant. Re-introduce v1 logic behind the gate (see the revert in `5516865` for the original code).
+3. **`CS_EXPAND_STRATEGY` env-var gate** — does not exist yet. Implementation: read once in `reverse_expand_from_anchors`, branch on the variant. Re-introduce v1 logic behind the gate (see the revert in `5516865` for the original code).
 4. **SWE-bench Verified panel ingestion** — write `ingest_panel.py` first, hand-correct the auto-categories, freeze the panel before running variants. The panel must be deterministic across runs or aggregations are meaningless.
 5. **Strongest-anchor extraction** — `score.py` and `ingest_panel.py` both need to identify "the anchor a reverse-expand walk would seed from." Easiest: surface this from `engine.rs` via a debug-only CLI subcommand (`codesurgeon anchors <query> --context <ctx>`). Without it the panel can still run, but `category.density` and `fix_site_in_impact` become harder to compute.
 

@@ -6,7 +6,7 @@ Companion to [`reverse_expand_panel.md`](reverse_expand_panel.md) (design + rati
 
 | What | Where | How to check |
 |---|---|---|
-| codesurgeon binary with `--json` + `CS_REVERSE_EXPAND_STRATEGY` support | `target/release/codesurgeon` | `target/release/codesurgeon anchors --help` (must list the `anchors` subcommand) |
+| codesurgeon binary with `--json` + `CS_EXPAND_STRATEGY` support | `target/release/codesurgeon` | `target/release/codesurgeon anchors --help` (must list the `anchors` subcommand) |
 | Warm workspaces — one per task, indexed under `.codesurgeon/` | `target/swebench-warm/<instance_id>/` | Each task TOML's `workspace` field points to one |
 | Python 3.14 + `uv` | shell PATH | `uv --version` |
 | `gh` CLI | optional, only for posting results | `gh --version` |
@@ -217,7 +217,7 @@ Re-running adds rows to a *new* JSONL file (run-id scoped). Use `report.py` with
 ### Add a variant
 
 1. Add `[variants.<id>]` block to `panel/variants.toml` with the strategy string.
-2. Implement that strategy in `crates/cs-core/src/ranking.rs::ReverseExpandStrategy::from_env`. The current set is `none / v0 / v1a / v1b / v1ab / v2`; `v3a / v3b` are stubbed but not implemented.
+2. Implement that strategy in `crates/cs-core/src/ranking.rs::ExpandStrategy::from_env`. The current set is `none / v0 / v1a / v1b / v1ab / v2`; `v3a / v3b` are stubbed but not implemented.
 3. Rebuild the binary, redeploy, re-run.
 
 ### Ablate budget without rebuilding
@@ -228,9 +228,9 @@ env var — useful for the [issue #96](https://github.com/subsriram/codesurgeon/
 "is best-first starving on budget?" investigation:
 
 ```bash
-CS_REVERSE_EXPAND_TOTAL_BUDGET=200 \
-CS_REVERSE_EXPAND_EXPAND_BUDGET=1000 \
-CS_REVERSE_EXPAND_STRATEGY=v3a \
+CS_EXPAND_TOTAL_BUDGET=200 \
+CS_EXPAND_GRAPH_BUDGET=1000 \
+CS_EXPAND_STRATEGY=v3a \
 CS_EXPAND_DIRECTION=forward \
 target/release/codesurgeon context "..." --json
 ```
@@ -269,7 +269,7 @@ Diff the headline + heatmap to see what moved.
 | `codesurgeon binary not found` | `CODESURGEON_BIN` doesn't resolve | Build it (step 1) or override the env var |
 | All rows `capsule_ok: false` | Workspace path wrong, or `.codesurgeon/` missing | Step 2c |
 | `! anchors exit 1` in stderr | The `anchors` subcommand wasn't built — old binary | Rebuild from a checkout that has [PR #93](https://github.com/subsriram/codesurgeon/pull/93) |
-| `CS_REVERSE_EXPAND_STRATEGY=… unrecognized` warning | Typo in `panel/variants.toml`, or a future variant not implemented yet | Match against the enum in `ranking.rs::ReverseExpandStrategy::from_env`. `v3a`/`v3b` warn-and-skip on purpose. |
+| `CS_EXPAND_STRATEGY=… unrecognized` warning | Typo in `panel/variants.toml`, or a future variant not implemented yet | Match against the enum in `ranking.rs::ExpandStrategy::from_env`. `v3a`/`v3b` warn-and-skip on purpose. |
 | `pivot_count` is 0 across all variants for one task | Anchor extraction returned nothing — usually a bad `query` or `context` | Re-run `codesurgeon anchors` directly to see what was extracted; adjust the task's `query` |
 | `fix_site_in_pivots: false` everywhere but the fix is "obviously" relevant | The fix-site FQN format from the gold patch may not match what codesurgeon emits (e.g. method vs. function path separators) | Inspect `matched_fix_site` field — `null` means no match attempt succeeded. Adjust the gold FQN in the task TOML. |
 | Run takes >>30 min | Either workspaces are cold (re-indexing per call) or `IMPACT_TIMEOUT_S` is being hit | Check `wall_ms` distribution in the JSONL; warm-index workspaces ahead of time |

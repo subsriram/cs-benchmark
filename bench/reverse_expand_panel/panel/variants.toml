@@ -2,8 +2,8 @@
 #
 # Two orthogonal axes, both env-gated in the codesurgeon engine:
 #
-#   strategy  → CS_REVERSE_EXPAND_STRATEGY  (how to rank candidates within a walk)
-#              ranking.rs::ReverseExpandStrategy: none/v0/v1a/v1b/v1ab/v2/v3a/v3b
+#   strategy  → CS_EXPAND_STRATEGY  (how to rank candidates within a walk)
+#              ranking.rs::ExpandStrategy: none/v0/v1a/v1b/v1ab/v2/v3a/v3b
 #
 #   direction → CS_EXPAND_DIRECTION         (which direction to walk for each anchor)
 #              ranking.rs::ExpandDirection:    auto/forward/reverse/both

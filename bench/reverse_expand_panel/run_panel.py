@@ -2,7 +2,7 @@
 """Reverse-expand diagnostic panel driver.
 
 For each (variant, task) pair:
-  1. Sets `CS_REVERSE_EXPAND_STRATEGY=<variant.strategy>` in the env.
+  1. Sets `CS_EXPAND_STRATEGY=<variant.strategy>` in the env.
   2. Runs `codesurgeon context <task.query> --context <task.context> --json`
      against the task's pre-warmed workspace.
   3. Runs `codesurgeon impact <task.strongest_anchor> --json` for the
@@ -136,7 +136,7 @@ def _run_cs(
     env = {
         **os.environ,
         "CS_WORKSPACE": str(workspace),
-        "CS_REVERSE_EXPAND_STRATEGY": strategy,
+        "CS_EXPAND_STRATEGY": strategy,
         "CS_EXPAND_DIRECTION": direction,
     }
     try:
