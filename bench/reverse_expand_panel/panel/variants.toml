@@ -23,12 +23,12 @@ strategy = "v1ab"
 [variants.v2]
 strategy = "v2"
 
-# v3a / v3b are not yet implemented in codesurgeon. Including them here
-# would surface as warnings + empty reverse-expand sets at run time. Keep
-# commented until the implementation lands.
-#
-# [variants.v3a]
-# strategy = "v3a"
-#
-# [variants.v3b]
-# strategy = "v3b"
+# Best-first walk with total-node budget (#69 option 3). Replaces the
+# fixed (depth × fan_out) BFS with a priority queue ordered by the
+# same mixed signal v2 uses. Implemented in codesurgeon b020358.
+[variants.v3a]
+strategy = "v3a"
+
+# v3a + UCB exploration bonus on the parent-seed subtree.
+[variants.v3b]
+strategy = "v3b"
