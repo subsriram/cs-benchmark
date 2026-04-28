@@ -53,5 +53,30 @@ direction = "forward"
 strategy  = "v2"
 direction = "both"
 
+# Best-first walkers paired with forward / both — the BFS variants
+# above can't reach depth-3 chains on dense graphs (the top-5
+# fan-out trim drops intermediate hops); v3a/v3b have separate
+# expand and emit budgets so the walk can spend depth on a
+# promising chain. Ablation request: matplotlib hist →
+# _update_patch_limits is 3 hops; v2_forward_only can't see it
+# at any capsule budget. v3a_forward_only / v3b_forward_only
+# should — that's the test these variants exist for.
+
+[variants.v3a_forward_only]
+strategy  = "v3a"
+direction = "forward"
+
+[variants.v3b_forward_only]
+strategy  = "v3b"
+direction = "forward"
+
+[variants.v3a_both]
+strategy  = "v3a"
+direction = "both"
+
+[variants.v3b_both]
+strategy  = "v3b"
+direction = "both"
+
 # Implicit `direction = "auto"` for the bare `v2` above — that's the
 # baseline the directional variants compare against.
