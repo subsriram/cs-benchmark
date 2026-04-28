@@ -217,7 +217,7 @@ Re-running adds rows to a *new* JSONL file (run-id scoped). Use `report.py` with
 ### Add a variant
 
 1. Add `[variants.<id>]` block to `panel/variants.toml` with the strategy string.
-2. Implement that strategy in `crates/cs-core/src/ranking.rs::ExpandStrategy::from_env`. The current set is `none / v0 / v1a / v1b / v1ab / v2`; `v3a / v3b` are stubbed but not implemented.
+2. Implement that strategy in `crates/cs-core/src/ranking.rs::ExpandStrategy::from_env`. The current set is `none / v0 / v1a / v1b / v1ab / v2 / v3a / v3b` — all implemented; `is_unimplemented()` returns false for everything.
 3. Rebuild the binary, redeploy, re-run.
 
 ### Ablate budget without rebuilding
@@ -238,15 +238,27 @@ target/release/codesurgeon context "..." --json
 To trace exactly what the walker emits at each depth, set `CS_LOG`:
 
 ```bash
-CS_LOG=cs_core::ranking=debug target/release/codesurgeon context "..." 2>&1 | grep expand-
-# expand-best-first [Forward]: emitted 8, expansions=12, depth_dist=[8, 0, 0, ...]
-# expand-bfs [Reverse]: emitted 5 (cap), depth_dist=[5, 0, 0, ...]
+CS_LOG=cs_core::ranking=debug target/release/codesurgeon context "..."
+# stderr (codesurgeon logs go to stderr to avoid polluting --json stdout):
+#
+# seed-lookup: name="hist" → leaf=2 exact=1 (union)
+# expand seeds: 2 forward = [.../pyplot.py::hist, .../axes/_axes.py::Axes::hist];
+#               0 reverse = [] (candidates considered: 8)
+# expand-best-first [Forward]: emitted 200 (cap), depth_dist=[7, 48, 145, 0, ...]
+#   seed=12345 (.../pyplot.py::hist) depth_dist=[3, 24, 73, 0, ...]
+#   seed=67890 (.../axes/_axes.py::Axes::hist) depth_dist=[4, 24, 72, 0, ...]
+# expand-best-first emissions: lib/.../Axes::hist::do_thing, lib/.../helper, ...
 ```
 
-`depth_dist` is a histogram indexed by depth (1, 2, 3, …). A flat
-`[8, 0, 0, ...]` indicates the walk never pushed past depth 1; a
-mixed `[3, 9, 5, 0, ...]` indicates depth was reached but those
-candidates didn't win RRF.
+The four log lines surface different layers of the retrieval pipeline:
+
+| Line | What it tells you |
+|---|---|
+| `seed-lookup: name=… → leaf=N exact=M` | How many symbols matched the anchor name. `leaf` uses the new indexed `leaf_name` column (catches `Class::method`); `exact` matches the literal `name` field. If `leaf == exact == 0`, the anchor name didn't resolve at all → check anchor extraction with `codesurgeon anchors`. If `leaf > exact`, the leaf-name fix [issue #96] is doing its job. |
+| `expand seeds: …` | Final list of seeds chosen for the walk after the kind/fan-out gates. `candidates considered` is the pre-gate union size — when it's much bigger than `forward + reverse`, the gates dropped some. |
+| `depth_dist=[…]` (per-walker) | Histogram indexed by depth (1, 2, 3, …). Flat `[8, 0, 0, ...]` → walk never pushed past depth 1; mixed → walk reached depth N but candidates didn't win RRF. |
+| `seed=ID (FQN) depth_dist=[…]` | Per-seed bucketed depths. Sorted by total emissions per seed so the dominant subtree shows first. Decisive for "did seed X actually get walked, or did seed Y monopolize the budget?" |
+| `<walker> emissions: fqn1, fqn2, …` | Full pre-RRF emission set. Grep for an expected fix-site name to disambiguate "walk found it but RRF dropped it" from "walk never traversed there". |
 
 ### Re-run after a code change
 
@@ -269,7 +281,9 @@ Diff the headline + heatmap to see what moved.
 | `codesurgeon binary not found` | `CODESURGEON_BIN` doesn't resolve | Build it (step 1) or override the env var |
 | All rows `capsule_ok: false` | Workspace path wrong, or `.codesurgeon/` missing | Step 2c |
 | `! anchors exit 1` in stderr | The `anchors` subcommand wasn't built — old binary | Rebuild from a checkout that has [PR #93](https://github.com/subsriram/codesurgeon/pull/93) |
-| `CS_EXPAND_STRATEGY=… unrecognized` warning | Typo in `panel/variants.toml`, or a future variant not implemented yet | Match against the enum in `ranking.rs::ExpandStrategy::from_env`. `v3a`/`v3b` warn-and-skip on purpose. |
+| `CS_EXPAND_STRATEGY=… unrecognized` warning | Typo in `panel/variants.toml`, or a future variant not implemented yet | Match against the enum in `ranking.rs::ExpandStrategy::from_env`. The current set: `none / v0 / v1a / v1b / v1ab / v2 / v3a / v3b`. |
+| `expand seeds: 1 forward = [pyplot.py::hist]` (one seed for a multi-match name) | DB lookup found the wrapper (top-level function) but missed class methods. Pre-#96 binaries had this bug — `WHERE name = "hist"` only matches `name = "hist"`, not `name = "Axes::hist"`. | Verify the binary is post-`909047d54491` (fix uses `leaf_name` column). Existing warm workspaces auto-migrate on first reopen — no re-index needed; the schema migration backfills `leaf_name` for all existing rows. |
+| `seed-lookup: name="X" → leaf=0 exact=0` | Anchor extraction produced "X" but no symbol in the index has it as `name` or `leaf_name`. | Either anchor extraction is too eager (run `codesurgeon anchors <query>` to inspect), or the symbol genuinely isn't indexed (re-index the workspace). |
 | `pivot_count` is 0 across all variants for one task | Anchor extraction returned nothing — usually a bad `query` or `context` | Re-run `codesurgeon anchors` directly to see what was extracted; adjust the task's `query` |
 | `fix_site_in_pivots: false` everywhere but the fix is "obviously" relevant | The fix-site FQN format from the gold patch may not match what codesurgeon emits (e.g. method vs. function path separators) | Inspect `matched_fix_site` field — `null` means no match attempt succeeded. Adjust the gold FQN in the task TOML. |
 | Run takes >>30 min | Either workspaces are cold (re-indexing per call) or `IMPACT_TIMEOUT_S` is being hit | Check `wall_ms` distribution in the JSONL; warm-index workspaces ahead of time |
