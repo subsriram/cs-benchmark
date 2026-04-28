@@ -1,0 +1,12 @@
+# Bench output — regenerated on every run.
+target/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
