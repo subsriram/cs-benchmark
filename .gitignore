@@ -1,12 +1,19 @@
 # Bench output — regenerated on every run.
 target/
 
+# uv project venv
+.venv/
+
 # Python bytecode
 __pycache__/
 *.pyc
 
-# Editor / OS
+# Codesurgeon index (created if anyone runs codesurgeon against this repo)
+.codesurgeon/
+
+# Editor / OS / agent state
 .DS_Store
 .idea/
 .vscode/
+.claude/
 *.swp

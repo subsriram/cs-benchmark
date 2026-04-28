@@ -45,9 +45,23 @@ target/                      # gitignored — all bench output
   ```bash
   cd "$CODESURGEON_DIR" && cargo build --release --features metal
   ```
-- **uv** + Python 3.14 — most scripts are PEP 723 self-installing
+- **uv** + Python 3.14 — managed via `pyproject.toml` (no system Python
+  pollution)
 - **Docker** — required by `swebench.harness` for evaluation
 - **`claude` on PATH** — Claude Code CLI v2.1+, OAuth-authenticated
+
+## Setup
+
+Once per clone:
+
+```bash
+cd ~/projects/cs-benchmark
+uv sync          # creates .venv/, installs swebench harness
+```
+
+After this every script can be invoked via `uv run scripts/foo.py …` (uv
+picks up the project venv automatically) or by activating the venv
+directly (`source .venv/bin/activate` then `python scripts/foo.py`).
 
 ## Configuration
 

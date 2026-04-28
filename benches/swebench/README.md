@@ -173,8 +173,8 @@ existing rows and append new ones. The launch script always passes
 Verify the wiring without touching anything expensive:
 
 ```bash
-uv run --python 3.14 benches/swebench/run.py --tasks 3 --dry-run
-uv run --python 3.14 scripts/swebench_report.py
+uv run benches/swebench/run.py --tasks 3 --dry-run
+uv run scripts/swebench_report.py
 ```
 
 This exercises the command-building, arm iteration, and results.jsonl
@@ -183,7 +183,7 @@ append paths without spawning claude or cloning repos.
 ## Regenerating tasks.json
 
 ```bash
-uv run --python 3.14 benches/swebench/select_tasks.py --seed 17
+uv run benches/swebench/select_tasks.py --seed 17
 ```
 
 Different seed gives a different 100-task stratified sample. The committed

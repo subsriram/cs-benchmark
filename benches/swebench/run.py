@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = []
-# ///
+#!/usr/bin/env python3
 """SWE-bench Verified harness driver (issue #29a).
 
 For each (task, arm) pair:

@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = []
-# ///
+#!/usr/bin/env python3
 """Select a stratified 100-task subset from SWE-bench Verified.
 
 Fetches the SWE-bench_Verified dataset from HuggingFace's datasets-server

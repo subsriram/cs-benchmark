@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = []
-# ///
+#!/usr/bin/env python3
 """Token savings micro-benchmark — binary driver (parallel to cs-core's
 ``examples/token_savings.rs``).
 

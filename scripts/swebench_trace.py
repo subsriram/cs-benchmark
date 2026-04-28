@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = []
-# ///
+#!/usr/bin/env python3
 """Capture tool-call traces for a set of SWE-bench tasks (issue #29b diagnostic).
 
 Spawns ``claude --print --output-format stream-json`` with the codesurgeon

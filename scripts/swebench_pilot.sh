@@ -87,7 +87,7 @@ if [[ -n "${MODEL}" ]]; then
   AGENT_ARGS+=(--model "${MODEL}")
 fi
 
-uv run --python 3.14 benches/swebench/run.py "${AGENT_ARGS[@]}" \
+uv run benches/swebench/run.py "${AGENT_ARGS[@]}" \
   > "${LOG_DIR}/run.log" 2>&1 || {
     rc=$?
     log "phase 1 exited with code ${rc}"
@@ -102,7 +102,7 @@ log "  wrote ${RESULT_ROWS} rows to target/swebench/results.jsonl"
 
 # Phase 2 — swebench harness eval (Docker per task).
 log "phase 2/3: swebench harness evaluation"
-uv run --python 3.14 scripts/swebench_eval.py \
+uv run scripts/swebench_eval.py \
   --run-id "${RUN_ID}" \
   --max-workers "${MAX_WORKERS}" \
   > "${LOG_DIR}/eval.log" 2>&1 || {
@@ -116,7 +116,7 @@ log "phase 2 done — see ${LOG_DIR}/eval.log"
 
 # Phase 3 — render markdown report.
 log "phase 3/3: render report"
-uv run --python 3.14 scripts/swebench_report.py --pilot \
+uv run scripts/swebench_report.py --pilot \
   > "benches/swebench/report_pilot.md" 2> "${LOG_DIR}/report.err" || {
     rc=$?
     log "phase 3 exited with code ${rc}"

@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = []
-# ///
+#!/usr/bin/env python3
 """Render a SWE-bench run as markdown (issue #29a).
 
 Reads ``target/swebench/results.jsonl`` (produced by

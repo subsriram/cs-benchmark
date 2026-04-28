@@ -1,10 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = [
-#   "swebench>=3.0.0",
-# ]
-# ///
+#!/usr/bin/env python3
 """Evaluate captured SWE-bench patches via the official harness (issue #29b).
 
 Reads ``target/swebench/results.jsonl`` (produced by

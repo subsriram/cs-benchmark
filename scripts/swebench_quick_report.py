@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = []
-# ///
+#!/usr/bin/env python3
 """Quick in-flight analysis of target/swebench/results.jsonl.
 
 Shows: row counts per arm, status breakdown (ok/timeout/failed), per-repo

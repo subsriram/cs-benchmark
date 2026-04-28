@@ -1,0 +1,12 @@
+[project]
+name = "cs-benchmark"
+version = "0.1.0"
+description = "Benchmarks and SWE-bench harness for codesurgeon"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    # Official SWE-bench harness — invoked as
+    # `python -m swebench.harness.run_evaluation` from scripts/swebench_eval.py.
+    # Pinned >=3.0 for the run_id / max_workers CLI flags the eval script uses.
+    "swebench>=3.0.0",
+]
