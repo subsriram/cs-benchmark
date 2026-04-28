@@ -59,12 +59,16 @@ def _pct(num: int, denom: int) -> str:
 
 def headline(rows: list[dict]) -> None:
     print("\n## Headline recall (across all tasks)")
-    print(f"{'variant':<8} {'pivots':>8} {'skel':>8} {'impact':>8} {'any':>8} {'tasks':>8}")
+    print(
+        f"{'variant':<18} {'strat':<6} {'dir':<8} {'pivots':>7} {'skel':>7} {'impact':>7} {'any':>7} {'tasks':>7}"
+    )
     by_v: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         by_v[r["variant"]].append(r)
     for v in _variants(rows):
         rs = by_v[v]
+        strat = rs[0].get("strategy", "?")
+        direction = rs[0].get("direction", "auto")
         pivots = sum(1 for r in rs if r["fix_site_in_pivots"])
         skel = sum(1 for r in rs if r["fix_site_in_skeletons"])
         impact = sum(1 for r in rs if r["fix_site_in_impact"])
@@ -75,8 +79,8 @@ def headline(rows: list[dict]) -> None:
         )
         n = len(rs)
         print(
-            f"{v:<8} {_pct(pivots, n):>8} {_pct(skel, n):>8} {_pct(impact, n):>8} "
-            f"{_pct(any_hit, n):>8} {n:>8}"
+            f"{v:<18} {strat:<6} {direction:<8} {_pct(pivots, n):>7} {_pct(skel, n):>7} "
+            f"{_pct(impact, n):>7} {_pct(any_hit, n):>7} {n:>7}"
         )
 
 

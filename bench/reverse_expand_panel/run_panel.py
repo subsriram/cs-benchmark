@@ -89,6 +89,7 @@ class Task:
 class Variant:
     id: str
     strategy: str
+    direction: str = "auto"   # auto | forward | reverse | both (#95)
 
 
 def load_variants(only: list[str] | None) -> list[Variant]:
@@ -97,7 +98,13 @@ def load_variants(only: list[str] | None) -> list[Variant]:
     for vid, body in cfg.get("variants", {}).items():
         if only and vid not in only:
             continue
-        out.append(Variant(id=vid, strategy=str(body["strategy"])))
+        out.append(
+            Variant(
+                id=vid,
+                strategy=str(body["strategy"]),
+                direction=str(body.get("direction", "auto")),
+            )
+        )
     return out
 
 
@@ -115,6 +122,7 @@ def _run_cs(
     cs_bin: Path,
     workspace: Path,
     strategy: str,
+    direction: str,
     args: list[str],
     timeout: int,
 ) -> dict | None:
@@ -129,6 +137,7 @@ def _run_cs(
         **os.environ,
         "CS_WORKSPACE": str(workspace),
         "CS_REVERSE_EXPAND_STRATEGY": strategy,
+        "CS_EXPAND_DIRECTION": direction,
     }
     try:
         proc = subprocess.run(
@@ -186,7 +195,14 @@ def run_one(
     ]
     if task.context:
         capsule_args += ["--context", task.context]
-    capsule = _run_cs(cs_bin, task.workspace, variant.strategy, capsule_args, CONTEXT_TIMEOUT_S)
+    capsule = _run_cs(
+        cs_bin,
+        task.workspace,
+        variant.strategy,
+        variant.direction,
+        capsule_args,
+        CONTEXT_TIMEOUT_S,
+    )
     capsule_ms = int((time.time() - t0) * 1000)
 
     impact: dict | None = None
@@ -195,6 +211,7 @@ def run_one(
             cs_bin,
             task.workspace,
             variant.strategy,
+            variant.direction,
             ["impact", task.strongest_anchor],
             IMPACT_TIMEOUT_S,
         )
@@ -208,6 +225,7 @@ def run_one(
         "build_id": build_id,
         "variant": variant.id,
         "strategy": variant.strategy,
+        "direction": variant.direction,
         "task": task.id,
         "category": {
             "anchor": task.category_anchor,

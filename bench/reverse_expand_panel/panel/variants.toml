@@ -1,9 +1,19 @@
-# Reverse-expand strategy variants exercised by `run_panel.py`.
+# Reverse-expand strategy + direction variants exercised by `run_panel.py`.
 #
-# Each entry is a `[variants.<id>]` table with one field, `strategy`,
-# matching the values accepted by `CS_REVERSE_EXPAND_STRATEGY` in the
-# codesurgeon engine. See `crates/cs-core/src/ranking.rs::ReverseExpandStrategy`
-# for the full enum and `docs/reverse_expand_panel.md` for the design.
+# Two orthogonal axes, both env-gated in the codesurgeon engine:
+#
+#   strategy  → CS_REVERSE_EXPAND_STRATEGY  (how to rank candidates within a walk)
+#              ranking.rs::ReverseExpandStrategy: none/v0/v1a/v1b/v1ab/v2/v3a/v3b
+#
+#   direction → CS_EXPAND_DIRECTION         (which direction to walk for each anchor)
+#              ranking.rs::ExpandDirection:    auto/forward/reverse/both
+#
+# `auto` defers to the per-anchor classifier (kind + fan-out ratio).
+# Issue #95.
+#
+# Default `direction = "auto"` — entries below that omit it use auto.
+
+# ── Strategy axis (current main behavior — auto direction) ───────────────────
 
 [variants.none]
 strategy = "none"
@@ -23,12 +33,25 @@ strategy = "v1ab"
 [variants.v2]
 strategy = "v2"
 
-# Best-first walk with total-node budget (#69 option 3). Replaces the
-# fixed (depth × fan_out) BFS with a priority queue ordered by the
-# same mixed signal v2 uses. Implemented in codesurgeon b020358.
 [variants.v3a]
 strategy = "v3a"
 
-# v3a + UCB exploration bonus on the parent-seed subtree.
 [variants.v3b]
 strategy = "v3b"
+
+# ── Direction axis (#95) — strategy held at v2, direction varies ─────────────
+
+[variants.v2_reverse_only]
+strategy  = "v2"
+direction = "reverse"
+
+[variants.v2_forward_only]
+strategy  = "v2"
+direction = "forward"
+
+[variants.v2_both]
+strategy  = "v2"
+direction = "both"
+
+# Implicit `direction = "auto"` for the bare `v2` above — that's the
+# baseline the directional variants compare against.
