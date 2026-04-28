@@ -155,11 +155,27 @@ def _run_cs(
         return None
 
 
+def capture_build_id(cs_bin: Path) -> str:
+    """Run `<cs_bin> --version` and return the trimmed output.
+
+    Captured once per panel run and stamped on every result row so the
+    JSONL is self-describing — `report.py` can warn if results from
+    different builds are merged into one report.
+    """
+    try:
+        out = subprocess.check_output([str(cs_bin), "--version"], text=True, timeout=5)
+    except (subprocess.SubprocessError, OSError) as e:
+        print(f"  ! could not capture build id: {e}", file=sys.stderr)
+        return "unknown"
+    return out.strip()
+
+
 def run_one(
     cs_bin: Path,
     variant: Variant,
     task: Task,
     budget: int,
+    build_id: str,
 ) -> dict:
     t0 = time.time()
     capsule_args = [
@@ -189,6 +205,7 @@ def run_one(
         metrics = score(capsule, impact, task.fix_sites)
 
     return {
+        "build_id": build_id,
         "variant": variant.id,
         "strategy": variant.strategy,
         "task": task.id,
@@ -229,6 +246,9 @@ def main() -> int:
         print("no tasks matched", file=sys.stderr)
         return 2
 
+    build_id = capture_build_id(args.cs_bin)
+    print(f"build: {build_id}")
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = args.run_id or f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     out_path = RESULTS_DIR / f"{run_id}.jsonl"
@@ -238,7 +258,7 @@ def main() -> int:
         for v in variants:
             for t in tasks:
                 print(f"  [{v.id}] {t.id}", flush=True)
-                row = run_one(args.cs_bin, v, t, args.budget)
+                row = run_one(args.cs_bin, v, t, args.budget, build_id)
                 fh.write(json.dumps(row) + "\n")
                 fh.flush()
 

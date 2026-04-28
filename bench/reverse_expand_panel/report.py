@@ -167,6 +167,21 @@ def main() -> int:
         print("no rows loaded", file=sys.stderr)
         return 2
 
+    builds = sorted({r.get("build_id", "") for r in rows} - {""})
+    if not builds:
+        print("\n## Build", flush=True)
+        print("  no build_id captured (rows pre-date the version-stamping change)")
+    elif len(builds) == 1:
+        print("\n## Build")
+        print(f"  {builds[0]}")
+    else:
+        print(
+            "\n## ⚠ Multiple builds in result set — direct comparison may not be valid",
+            file=sys.stderr,
+        )
+        for b in builds:
+            print(f"  - {b}", file=sys.stderr)
+
     headline(rows)
     heatmap(rows, metric=args.metric)
     if args.baseline in _variants(rows):
