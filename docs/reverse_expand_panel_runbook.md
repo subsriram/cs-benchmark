@@ -220,6 +220,34 @@ Re-running adds rows to a *new* JSONL file (run-id scoped). Use `report.py` with
 2. Implement that strategy in `crates/cs-core/src/ranking.rs::ReverseExpandStrategy::from_env`. The current set is `none / v0 / v1a / v1b / v1ab / v2`; `v3a / v3b` are stubbed but not implemented.
 3. Rebuild the binary, redeploy, re-run.
 
+### Ablate budget without rebuilding
+
+`v3a` / `v3b` (best-first walks) have an emit cap (`TOTAL_BUDGET = 40`)
+and a graph-expansion cap (`EXPAND_BUDGET = 200`). Both override via
+env var — useful for the [issue #96](https://github.com/subsriram/codesurgeon/issues/96)
+"is best-first starving on budget?" investigation:
+
+```bash
+CS_REVERSE_EXPAND_TOTAL_BUDGET=200 \
+CS_REVERSE_EXPAND_EXPAND_BUDGET=1000 \
+CS_REVERSE_EXPAND_STRATEGY=v3a \
+CS_EXPAND_DIRECTION=forward \
+target/release/codesurgeon context "..." --json
+```
+
+To trace exactly what the walker emits at each depth, set `CS_LOG`:
+
+```bash
+CS_LOG=cs_core::ranking=debug target/release/codesurgeon context "..." 2>&1 | grep expand-
+# expand-best-first [Forward]: emitted 8, expansions=12, depth_dist=[8, 0, 0, ...]
+# expand-bfs [Reverse]: emitted 5 (cap), depth_dist=[5, 0, 0, ...]
+```
+
+`depth_dist` is a histogram indexed by depth (1, 2, 3, …). A flat
+`[8, 0, 0, ...]` indicates the walk never pushed past depth 1; a
+mixed `[3, 9, 5, 0, ...]` indicates depth was reached but those
+candidates didn't win RRF.
+
 ### Re-run after a code change
 
 ```bash
