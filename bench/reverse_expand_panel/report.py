@@ -186,6 +186,25 @@ def main() -> int:
         for b in builds:
             print(f"  - {b}", file=sys.stderr)
 
+    directions = sorted({r.get("direction", "") for r in rows} - {""})
+    if not directions:
+        print("\n## Direction")
+        print("  no direction captured (rows pre-date the #95 direction-axis change)")
+    elif len(directions) == 1:
+        print("\n## Direction")
+        print(f"  {directions[0]}")
+    else:
+        # Multiple directions in one result set is *expected* when comparing
+        # the direction axis — that's the whole point of the #95 panel
+        # extension. Don't warn; just enumerate per-variant counts so the
+        # reader can see which directions each variant ran.
+        print("\n## Direction")
+        per_var: dict[tuple[str, str], int] = defaultdict(int)
+        for r in rows:
+            per_var[(r.get("variant", ""), r.get("direction", ""))] += 1
+        for (v, d), n in sorted(per_var.items()):
+            print(f"  {n:>4}× {v:<18} direction={d}")
+
     headline(rows)
     heatmap(rows, metric=args.metric)
     if args.baseline in _variants(rows):

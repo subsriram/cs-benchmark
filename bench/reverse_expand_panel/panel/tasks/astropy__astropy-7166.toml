@@ -14,14 +14,12 @@ Inside the InheritDocstrings metaclass it uses `inspect.isfunction` which return
 
 fix_sites = ["astropy/utils/misc.py::InheritDocstrings::__init__"]
 
-# TODO(human): set to the symbol the reverse-expand walk should seed from.
-# Usually an exception class or a user-named API call from `query`/`context`.
-# Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "astropy/utils/misc.py::InheritDocstrings"
 
 [category]
 anchor  = "named_api"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
-                      # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
-                      # `codesurgeon flow <strongest_anchor> <fix_site>`.
+density = "medium"  # 10 direct dependents
+hops    = "1"       # anchor is the class; fix site is its __init__ — same
+                    # class scope, agent only has to peek inside the class
+                    # body. Static flow returns no path because class→own-method
+                    # isn't a call edge.

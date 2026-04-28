@@ -104,14 +104,12 @@ import matplotlib; print("Matplotlib", matplotlib.__version__)
 
 fix_sites = ["astropy/io/fits/connect.py::is_fits"]
 
-# TODO(human): set to the symbol the reverse-expand walk should seed from.
-# Usually an exception class or a user-named API call from `query`/`context`.
-# Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "astropy/io/registry/base.py::_UnifiedIORegistryBase::identify_format"
 
 [category]
 anchor  = "traceback"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
-                      # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
-                      # `codesurgeon flow <strongest_anchor> <fix_site>`.
+density = "sparse"  # 5 direct dependents
+hops    = "2-3"     # static flow returns no path (registry callback dispatch
+                    # via self._identifiers[(fmt,cls)] is a runtime dict
+                    # lookup the graph can't trace); practical agent-reach
+                    # is 2-3 hops once the registry indirection is followed

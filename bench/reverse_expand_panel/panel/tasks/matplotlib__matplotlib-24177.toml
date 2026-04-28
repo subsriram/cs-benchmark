@@ -73,14 +73,11 @@ pip
 
 fix_sites = ["lib/matplotlib/axes/_base.py::_AxesBase::_update_patch_limits"]
 
-# TODO(human): set to the symbol the reverse-expand walk should seed from.
-# Usually an exception class or a user-named API call from `query`/`context`.
-# Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "lib/matplotlib/axes/_axes.py::Axes::hist"
 
 [category]
 anchor  = "symptom_only"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
-                      # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
-                      # `codesurgeon flow <strongest_anchor> <fix_site>`.
+density = "dense"   # 51 direct dependents
+hops    = "2-3"     # flow Axes::hist → _AxesBase::_update_patch_limits is
+                    # a 4-node / 3-hop path: hist → fill → add_patch →
+                    # _update_patch_limits

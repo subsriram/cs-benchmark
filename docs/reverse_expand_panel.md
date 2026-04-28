@@ -72,22 +72,41 @@ This is a one-shot tool. The point is to avoid hand-maintaining 20 specs and to 
 
 ## Variants
 
-Gate ranking strategies behind a single env var read inside `engine.rs::reverse_expand_from_anchors`. **One binary, env-gated variants** — much faster to iterate than rebuilding per variant.
+Two orthogonal axes, both env-gated in the codesurgeon engine. **One binary, env-gated variants** — much faster to iterate than rebuilding per variant.
+
+### Strategy axis — `CS_REVERSE_EXPAND_STRATEGY`
+
+How candidates are ranked **within** a walk:
 
 ```
 CS_REVERSE_EXPAND_STRATEGY ∈ {
   none,         # baseline: pre-#67, no reverse-expand at all
-  v0,           # current main: fixed fan_out=5, depth=3 (#67 only)
+  v0,           # fixed fan_out=5, depth=3 (#67)
   v1a,          # density-aware fan-out alone
   v1b,          # query-term-overlap fan-out alone
   v1ab,         # density + query (v1 as originally landed in #69)
-  v2,           # semantic-embedding fan-out (#83, currently default)
+  v2,           # semantic-embedding fan-out (#83)
   v3a,          # total-node-budget + best-first, mixed-signal priority
   v3b,          # v3a + UCB exploration bonus
 }
 ```
 
 Re-introducing v1 logic on a feature gate is mandatory — the v1 code is currently absent from `main` (revert in `5516865`). Resurrecting it as a variant rather than as the new default is a much smaller commitment than landing a new ranking change.
+
+### Direction axis — `CS_EXPAND_DIRECTION` (codesurgeon [#95](https://github.com/subsriram/codesurgeon/issues/95))
+
+Which direction the walk takes from each anchor:
+
+```
+CS_EXPAND_DIRECTION ∈ {
+  auto,         # per-anchor classifier (kind + fan-out ratio); default
+  forward,      # walk callees only — useful when fix is downstream of a user-named API
+  reverse,      # walk callers only — useful when user names a symptom (exception, error string)
+  both,         # 50/50 budget split, dedup
+}
+```
+
+The two axes are orthogonal — a (strategy, direction) pair fully specifies engine behavior. The first 5×8 panel run found 4 of 5 SWE-bench tasks were unreachable by any reverse-only variant because their fix sites are downstream of user-named anchors; the direction axis exists to evaluate forward and bidirectional walks against the same task panel.
 
 ## Metrics
 

@@ -75,16 +75,14 @@ Serialize raise exception because is not possible to combine select_related and 
 django.core.exceptions.FieldError: Field TestTag.master cannot be both deferred and traversed using select_related at the same time.
 """
 
-fix_sites = ["django/core/serializers/python.py::queryset_iterator", "django/core/serializers/xml_serializer.py::queryset_iterator"]
+fix_sites = ["django/core/serializers/python.py::Serializer::queryset_iterator", "django/core/serializers/xml_serializer.py::Serializer::queryset_iterator"]
 
-# TODO(human): set to the symbol the reverse-expand walk should seed from.
-# Usually an exception class or a user-named API call from `query`/`context`.
-# Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "django/core/serializers/python.py::Serializer::handle_m2m_field"
 
 [category]
 anchor  = "traceback"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
-                      # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
-                      # `codesurgeon flow <strongest_anchor> <fix_site>`.
+density = "sparse"  # 3 direct dependents
+hops    = "2-3"     # static flow returns no path (handle_m2m_field calls
+                    # the m2m_value/m2m_iter closures, which call into
+                    # queryset.iterator() via dynamic dispatch); agent
+                    # reach is 2-3 method calls

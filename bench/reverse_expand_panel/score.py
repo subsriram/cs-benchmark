@@ -43,6 +43,13 @@ def _fqn_match(observed: str, gold: str) -> bool:
     """
     if observed == gold:
         return True
+    # Class-pivot ⊃ method-fix-site: a pivot of `path::Class` returns the
+    # full class source body, which contains every method including
+    # `path::Class::method`. The agent reading the capsule sees the
+    # buggy method body. astropy-7166 hit this case — fix-site
+    # `InheritDocstrings::__init__` is "in" the class pivot.
+    if gold.startswith(observed + "::"):
+        return True
     # File path prefix + symbol-name suffix match
     if "::" in gold and "::" in observed:
         gold_path, _, gold_sym = gold.partition("::")
