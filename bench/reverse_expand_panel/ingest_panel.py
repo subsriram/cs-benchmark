@@ -131,9 +131,27 @@ def extract_fix_sites(patch: str) -> list[tuple[str, str]]:
                 fqn = f"{path}::{last_class}::{last_def}" if last_class else f"{path}::{last_def}"
                 if (path, fqn) not in out:
                     out.append((path, fqn))
-        # If no enclosing def found (e.g. module-level edits), record file only.
+        # Hunk-header-only fallback: a patch that modifies the body of an
+        # existing function never re-introduces a `def` line in diff context,
+        # so the inline-def emit above never fires. If we captured a
+        # `last_def` from a hunk header (or surrounding class context) but
+        # emitted nothing for this path, emit it now.
+        # Note: limitation — when the change is nested inside a method whose
+        # `def` line is *not* in the hunk header (e.g. metaclass __init__
+        # whose hunk header lacks `def`), neither this fallback nor the
+        # inline scan recovers the symbol; the path falls through to
+        # `<module>`. A full diff parser (`unidiff`) would be needed to lift
+        # surrounding-file context.
         if not any(p == path for p, _ in out):
-            out.append((path, f"{path}::<module>"))
+            if last_def:
+                fqn = (
+                    f"{path}::{last_class}::{last_def}"
+                    if last_class
+                    else f"{path}::{last_def}"
+                )
+                out.append((path, fqn))
+            else:
+                out.append((path, f"{path}::<module>"))
     return out
 
 
@@ -145,6 +163,10 @@ def classify_anchor(problem_statement: str, fix_sites: list[str]) -> str:
     ps_lower = problem_statement.lower()
     for fqn in fix_sites:
         sym = fqn.rsplit("::", 1)[-1].lower()
+        if sym == "<module>":
+            # Sentinel from extract_fix_sites when no enclosing symbol was
+            # recovered — never a real identifier in any problem statement.
+            continue
         if len(sym) >= 4 and sym in ps_lower:
             return "named_api"
     return "symptom_only"
