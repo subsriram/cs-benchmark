@@ -1,6 +1,6 @@
 # Reverse-Expand Diagnostic Panel — design spec
 
-**Status:** spec only — implementation pending in `bench/reverse_expand_panel/`.
+**Status:** implementation landed in `bench/reverse_expand_panel/` (commit `0c56989`); see [`reverse_expand_panel_runbook.md`](reverse_expand_panel_runbook.md) to run it.
 **Owner / driver:** Sriram.
 **Tracking issue:** [codesurgeon#69](https://github.com/subsriram/codesurgeon/issues/69) (re-evaluation of the v1 ranking changes that were reverted in `5516865`).
 
