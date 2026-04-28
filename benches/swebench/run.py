@@ -446,6 +446,12 @@ class RunResult:
     diff_path: str | None
     claude_json_path: str | None
     error: str | None
+    # Binary versions captured once per `main()` invocation and stamped
+    # onto every row before append. Lets `jq '.claude_version' *.jsonl`
+    # detect the 2.1.117-class MCP-broken regression (issue #69) after
+    # the fact, and tells which codesurgeon ranking change a row reflects.
+    claude_version: str | None = None
+    codesurgeon_version: str | None = None
 
 
 def load_tasks(path: Path) -> list[dict]:
@@ -1593,6 +1599,32 @@ def looks_like_transient_error(result: RunResult, stderr_text: str = "") -> bool
     return False
 
 
+def probe_version(bin_path: str | Path) -> str | None:
+    """Capture `<bin> --version` for results provenance.
+
+    Returns the first non-empty stdout line, trimmed. Returns None on
+    timeout, non-zero exit, or empty output (e.g. `codesurgeon-mcp`,
+    which doesn't implement `--version`). Never raises — version
+    capture is best-effort and must not abort a run.
+    """
+    try:
+        proc = subprocess.run(
+            [str(bin_path), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return None
+
+
 def probe_claude_auth(claude_bin: str) -> bool:
     """Quick liveness check — can claude authenticate right now?
 
@@ -1755,6 +1787,13 @@ def main() -> int:
         print(f"codesurgeon CLI binary not found: {cs_bin}", file=sys.stderr)
         print("  build it: cargo build --release --features metal", file=sys.stderr)
         return 2
+
+    claude_version = None if args.dry_run else probe_version(claude_bin)
+    codesurgeon_version = None if args.dry_run else probe_version(cs_bin)
+    print(
+        f"  versions: claude={claude_version!r} codesurgeon={codesurgeon_version!r}",
+        file=sys.stderr,
+    )
 
     tasks = load_tasks(TASKS_PATH)
     if args.instance_ids:
@@ -1949,6 +1988,8 @@ def main() -> int:
                 )
             result = _do_run(task, arm)
 
+        result.claude_version = claude_version
+        result.codesurgeon_version = codesurgeon_version
         append_result(args.results, result)
 
     # Drain any in-flight prefetch on shutdown so its result hits the cache

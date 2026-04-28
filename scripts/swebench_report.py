@@ -205,6 +205,62 @@ def render_per_repo(results: list[dict]) -> list[str]:
     return lines
 
 
+def render_versions(results: list[dict]) -> list[str]:
+    """Versions section, mirroring the panel side's ``## Build``.
+
+    Each row stamps `(claude_version, codesurgeon_version)` from the
+    binaries in use at run time (see ``benches/swebench/run.py``). Three
+    states:
+      - no version fields → rows pre-date the stamping change
+      - one tuple → print it (provenance for the headline numbers)
+      - multiple tuples → still print the section, but ALSO warn to stderr
+        because mixing rows from different binaries silently invalidates
+        any with/without delta. Issue #69 was caused by exactly this kind
+        of silent confound (claude 2.1.117 broke ``--mcp-config`` mid-run).
+    """
+    pairs: dict[tuple[str, str], int] = defaultdict(int)
+    for r in results:
+        c = r.get("claude_version")
+        s = r.get("codesurgeon_version")
+        if c is None and s is None:
+            continue
+        pairs[(c or "", s or "")] += 1
+
+    lines: list[str] = ["### Versions", ""]
+    if not pairs:
+        lines.append(
+            "_No version fields on any row — results pre-date the version-stamping "
+            "change in `run.py`. Provenance unverifiable._"
+        )
+        lines.append("")
+        return lines
+
+    if len(pairs) == 1:
+        (claude, cs), n = next(iter(pairs.items()))
+        lines.append(f"- claude: `{claude or '—'}`")
+        lines.append(f"- codesurgeon: `{cs or '—'}`")
+        lines.append("")
+        return lines
+
+    # Multiple — warn to stderr, render all in markdown.
+    print(
+        "## ⚠ Multiple (claude, codesurgeon) versions in result set — "
+        "with/without deltas may not be valid",
+        file=sys.stderr,
+    )
+    for (claude, cs), n in sorted(pairs.items(), key=lambda kv: -kv[1]):
+        print(f"  - {n}× claude={claude or '—'} codesurgeon={cs or '—'}", file=sys.stderr)
+    lines.append("⚠ **Multiple binary versions appear in this result set.** "
+                 "with/without deltas mix runs from different binaries and may not be valid.")
+    lines.append("")
+    lines.append("| Rows | claude | codesurgeon |")
+    lines.append("|---:|---|---|")
+    for (claude, cs), n in sorted(pairs.items(), key=lambda kv: -kv[1]):
+        lines.append(f"| {n} | `{claude or '—'}` | `{cs or '—'}` |")
+    lines.append("")
+    return lines
+
+
 def render_errors(results: list[dict]) -> list[str]:
     errored = [r for r in results if r.get("error")]
     if not errored:
@@ -238,6 +294,7 @@ def main() -> int:
 
     out: list[str] = []
     out.extend(render_headline(with_summary, without_summary, args.pilot))
+    out.extend(render_versions(results))
     out.extend(render_per_repo(results))
     out.extend(render_errors(results))
 
