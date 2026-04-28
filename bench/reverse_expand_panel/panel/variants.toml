@@ -1,0 +1,34 @@
+# Reverse-expand strategy variants exercised by `run_panel.py`.
+#
+# Each entry is a `[variants.<id>]` table with one field, `strategy`,
+# matching the values accepted by `CS_REVERSE_EXPAND_STRATEGY` in the
+# codesurgeon engine. See `crates/cs-core/src/ranking.rs::ReverseExpandStrategy`
+# for the full enum and `docs/reverse_expand_panel.md` for the design.
+
+[variants.none]
+strategy = "none"
+
+[variants.v0]
+strategy = "v0"
+
+[variants.v1a]
+strategy = "v1a"
+
+[variants.v1b]
+strategy = "v1b"
+
+[variants.v1ab]
+strategy = "v1ab"
+
+[variants.v2]
+strategy = "v2"
+
+# v3a / v3b are not yet implemented in codesurgeon. Including them here
+# would surface as warnings + empty reverse-expand sets at run time. Keep
+# commented until the implementation lands.
+#
+# [variants.v3a]
+# strategy = "v3a"
+#
+# [variants.v3b]
+# strategy = "v3b"
