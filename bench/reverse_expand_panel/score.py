@@ -19,6 +19,7 @@ class Metrics:
     fix_site_in_pivots: bool
     fix_site_in_skeletons: bool
     fix_site_in_impact: bool
+    fix_site_in_forward_reach: bool  # gold reachable from strongest_anchor via `flow` (callee direction); mirrors fix_site_in_impact for the forward direction (codesurgeon#96)
     fix_site_rank: int | None       # 1-indexed position in capsule.pivots ++ capsule.skeletons
     matched_fix_site: str | None    # which gold FQN landed (or None)
     pivot_count: int
@@ -67,6 +68,7 @@ def score(
     capsule: dict,
     impact: dict | None,
     gold_fix_sites: list[str],
+    forward_reach: bool = False,
 ) -> Metrics:
     pivots = capsule.get("pivots", []) or []
     skeletons = capsule.get("skeletons", []) or []
@@ -110,6 +112,7 @@ def score(
         fix_site_in_pivots=fix_in_pivots,
         fix_site_in_skeletons=fix_in_skeletons,
         fix_site_in_impact=fix_in_impact,
+        fix_site_in_forward_reach=forward_reach,
         fix_site_rank=rank,
         matched_fix_site=matched,
         pivot_count=int(stats.get("pivot_count", len(pivot_fqns))),

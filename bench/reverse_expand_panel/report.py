@@ -60,7 +60,7 @@ def _pct(num: int, denom: int) -> str:
 def headline(rows: list[dict]) -> None:
     print("\n## Headline recall (across all tasks)")
     print(
-        f"{'variant':<18} {'strat':<6} {'dir':<8} {'pivots':>7} {'skel':>7} {'impact':>7} {'any':>7} {'tasks':>7}"
+        f"{'variant':<18} {'strat':<6} {'dir':<8} {'pivots':>7} {'skel':>7} {'impact':>7} {'fwdrch':>7} {'any':>7} {'tasks':>7}"
     )
     by_v: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
@@ -72,15 +72,22 @@ def headline(rows: list[dict]) -> None:
         pivots = sum(1 for r in rs if r["fix_site_in_pivots"])
         skel = sum(1 for r in rs if r["fix_site_in_skeletons"])
         impact = sum(1 for r in rs if r["fix_site_in_impact"])
+        # `fix_site_in_forward_reach` was added in #96 follow-up; rows from
+        # earlier runs lack the field. .get() defaults to False so old rows
+        # don't poison the column.
+        fwdrch = sum(1 for r in rs if r.get("fix_site_in_forward_reach", False))
         any_hit = sum(
             1
             for r in rs
-            if r["fix_site_in_pivots"] or r["fix_site_in_skeletons"] or r["fix_site_in_impact"]
+            if r["fix_site_in_pivots"]
+            or r["fix_site_in_skeletons"]
+            or r["fix_site_in_impact"]
+            or r.get("fix_site_in_forward_reach", False)
         )
         n = len(rs)
         print(
             f"{v:<18} {strat:<6} {direction:<8} {_pct(pivots, n):>7} {_pct(skel, n):>7} "
-            f"{_pct(impact, n):>7} {_pct(any_hit, n):>7} {n:>7}"
+            f"{_pct(impact, n):>7} {_pct(fwdrch, n):>7} {_pct(any_hit, n):>7} {n:>7}"
         )
 
 

@@ -52,6 +52,7 @@ DEFAULT_CS_BIN = CODESURGEON_DIR / "target" / "release" / "codesurgeon"
 
 CONTEXT_TIMEOUT_S = 60
 IMPACT_TIMEOUT_S = 30
+FLOW_TIMEOUT_S = 30
 DEFAULT_BUDGET = 4000
 
 
@@ -164,6 +165,58 @@ def _run_cs(
         return None
 
 
+def has_forward_path(
+    cs_bin: Path,
+    workspace: Path,
+    src_fqn: str,
+    dst_fqn: str,
+    timeout: int = FLOW_TIMEOUT_S,
+) -> bool:
+    """Run `codesurgeon flow <src> <dst>` and return True iff a path exists.
+
+    Plain-text CLI (no --json yet); positive output starts with "Path from".
+    Backs the `fix_site_in_forward_reach` metric — a static-graph property
+    that mirrors `fix_site_in_impact` for the callee direction
+    (codesurgeon#96): impact returns dependents (callers); flow returns the
+    forward path. For tasks where the user names a public API and the fix
+    is in its callee chain (matplotlib-24177, django-16938, astropy-14309),
+    impact returns the wrong direction; this metric captures whether the
+    agent could chain a `flow` MCP call to find the fix from the
+    strongest_anchor.
+    """
+    env = {**os.environ, "CS_WORKSPACE": str(workspace)}
+    try:
+        proc = subprocess.run(
+            [str(cs_bin), "flow", src_fqn, dst_fqn],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"  ! timeout running flow ({timeout}s)", file=sys.stderr)
+        return False
+    if proc.returncode != 0:
+        return False
+    return proc.stdout.lstrip().startswith("Path from ")
+
+
+def task_forward_reach(cs_bin: Path, task: "Task") -> bool:
+    """`fix_site_in_forward_reach` for a task — variant-invariant.
+
+    True iff any gold fix-site is reachable from the strongest_anchor via
+    forward edges. Computed once per task at the top of `main()` and cached;
+    the static graph doesn't change per (strategy, direction) variant.
+    """
+    if not task.strongest_anchor:
+        return False
+    for fix in task.fix_sites:
+        if has_forward_path(cs_bin, task.workspace, task.strongest_anchor, fix):
+            return True
+    return False
+
+
 def capture_build_id(cs_bin: Path) -> str:
     """Run `<cs_bin> --version` and return the trimmed output.
 
@@ -185,6 +238,7 @@ def run_one(
     task: Task,
     budget: int,
     build_id: str,
+    forward_reach: bool = False,
 ) -> dict:
     t0 = time.time()
     capsule_args = [
@@ -217,9 +271,9 @@ def run_one(
         )
 
     if capsule is None:
-        metrics = Metrics(False, False, False, None, None, 0, 0)
+        metrics = Metrics(False, False, False, forward_reach, None, None, 0, 0)
     else:
-        metrics = score(capsule, impact, task.fix_sites)
+        metrics = score(capsule, impact, task.fix_sites, forward_reach=forward_reach)
 
     return {
         "build_id": build_id,
@@ -272,11 +326,27 @@ def main() -> int:
     out_path = RESULTS_DIR / f"{run_id}.jsonl"
     print(f"writing results to {out_path}")
 
+    # Pre-compute fix_site_in_forward_reach per task — variant-invariant
+    # static-graph property, so call once and cache instead of per-variant.
+    print("computing forward-reach (one flow call per task) …", flush=True)
+    forward_reach_by_task: dict[str, bool] = {}
+    for t in tasks:
+        reach = task_forward_reach(args.cs_bin, t)
+        forward_reach_by_task[t.id] = reach
+        print(f"  [{t.id}] forward_reach={reach}", flush=True)
+
     with out_path.open("w") as fh:
         for v in variants:
             for t in tasks:
                 print(f"  [{v.id}] {t.id}", flush=True)
-                row = run_one(args.cs_bin, v, t, args.budget, build_id)
+                row = run_one(
+                    args.cs_bin,
+                    v,
+                    t,
+                    args.budget,
+                    build_id,
+                    forward_reach=forward_reach_by_task[t.id],
+                )
                 fh.write(json.dumps(row) + "\n")
                 fh.flush()
 
