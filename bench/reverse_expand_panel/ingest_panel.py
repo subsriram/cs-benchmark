@@ -222,8 +222,11 @@ def _toml_str(s: str) -> str:
 
 
 def _escape_triple(s: str) -> str:
-    # Avoid accidental triple-quote close inside the body.
-    return s.replace('"""', '\\"\\"\\"')
+    # TOML basic multi-line strings (`"""..."""`) interpret `\` as an
+    # escape char — Windows-style path tracebacks (`D:\anaconda38\...`)
+    # would break tomllib.loads with "Unescaped '\' in a string".
+    # Escape backslashes first, then handle the triple-quote close.
+    return s.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
 
 
 def _summarize(text: str, max_chars: int = 140) -> str:
