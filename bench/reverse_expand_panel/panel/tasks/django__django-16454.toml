@@ -40,8 +40,7 @@ We can correct this by ensuring that the subparser action returned by add_subpar
 (Originally reported by Mark Gregson on django-developers: ​https://groups.google.com/g/django-developers/c/oWcaxkxQ-KI/m/4NUhLjddBwAJ )
 """
 
-fix_sites = ["django/core/management/base.py::add_subparsers", "django/core/management/base.py::handle_default_options"]
-
+fix_sites = ["django/core/management/base.py::CommandParser"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

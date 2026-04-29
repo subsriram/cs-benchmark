@@ -96,8 +96,7 @@ I would have expected the test to be skipped, even with `--pdb`. With `pytest==5
 
 """
 
-fix_sites = ["src/_pytest/unittest.py::fixture", "src/_pytest/unittest.py::_is_skipped"]
-
+fix_sites = ["src/_pytest/unittest.py::TestCaseFunction::runtest", "src/_pytest/unittest.py::UnitTestCase::collect", "src/_pytest/unittest.py::check_testcase_implements_trial_reporter", "src/_pytest/unittest.py::fixture"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

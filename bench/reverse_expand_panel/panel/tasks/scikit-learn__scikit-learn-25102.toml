@@ -68,8 +68,7 @@ One could adjust specific transformers for which this might be relevant. Such a 
 @fraimondo is also interested in this feature. 
 """
 
-fix_sites = ["sklearn/base.py::_validate_data", "sklearn/feature_selection/_base.py::inverse_transform"]
-
+fix_sites = ["sklearn/base.py::BaseEstimator::_validate_data", "sklearn/feature_selection/_base.py::SelectorMixin::_transform", "sklearn/feature_selection/_base.py::SelectorMixin::transform"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

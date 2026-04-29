@@ -160,8 +160,7 @@ My requests version is 1.2.3, but I see the same `.upper()` being used in the cu
 
 """
 
-fix_sites = ["requests/sessions.py::request"]
-
+fix_sites = ["requests/sessions.py::Session::request"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

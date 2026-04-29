@@ -44,8 +44,7 @@ Out[80]: dtype('float64')
 Somewhat related: #6389
 """
 
-fix_sites = ["astropy/units/quantity.py::Quantity::__new__"]
-
+fix_sites = ["astropy/units/quantity.py::Quantity", "astropy/units/quantity.py::Quantity::__new__"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

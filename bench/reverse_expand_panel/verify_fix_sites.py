@@ -51,8 +51,9 @@ SPLIT = "test"
 USEFUL_KINDS = ("function", "method", "class")
 
 
-HUNK_RE = re.compile(r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@", re.M)
+HUNK_RE = re.compile(r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$", re.M)
 DIFF_FILE_RE = re.compile(r"^\+\+\+ b/(.+)$", re.M)
+HUNK_HEADER_DEF_RE = re.compile(r"\bdef\s+(\w+)|\bclass\s+(\w+)")
 
 
 @dataclass
@@ -115,17 +116,25 @@ def fetch_patch(instance_id: str) -> str:
     return ""
 
 
-def parse_modified_lines(patch_text: str) -> dict[str, set[int]]:
-    """Return `{file_path: {pre_image_line_numbers_modified}}`.
+def parse_modified_lines(
+    patch_text: str,
+) -> tuple[dict[str, set[int]], dict[str, set[str]]]:
+    """Return `({file: {pre_image_lines_modified}}, {file: {hunk_header_hints}})`.
 
     "Modified" = either a `-` line (removed in the patch) or a `+` line's
     nearest pre-image neighbour (insertion point). For each hunk we walk
     its body, tracking `pre_line` per the hunk header; record every line
     that actually changed in the pre-image, plus the line *before* any
     insertion (so pure-add hunks still attribute to the right symbol).
+
+    Hunk-header hints (the `def X` / `class X` token Git includes after `@@`)
+    capture the enclosing context for hunks where the modified lines fall
+    in a gap between symbols (e.g. patch adds a new method between two
+    existing class methods). Used as a fallback when smallest_covering
+    returns nothing.
     """
-    result: dict[str, set[int]] = {}
-    # Split into per-file blocks; the prefix `diff --git ` is the marker.
+    modified_by_file: dict[str, set[int]] = {}
+    hints_by_file: dict[str, set[str]] = {}
     for block in re.split(r"^diff --git ", patch_text, flags=re.M):
         if not block.strip():
             continue
@@ -135,12 +144,14 @@ def parse_modified_lines(patch_text: str) -> dict[str, set[int]]:
         path = m.group(1).strip()
         if not path.endswith((".py", ".pyx")):
             continue
-        modified = result.setdefault(path, set())
-        # Iterate over hunks within this block.
+        modified = modified_by_file.setdefault(path, set())
+        hints = hints_by_file.setdefault(path, set())
         hunks = list(HUNK_RE.finditer(block))
         for i, hunk_m in enumerate(hunks):
             src_start = int(hunk_m.group(1))
-            # Hunk body runs from end-of-header to next-hunk-or-eof.
+            header_tail = hunk_m.group(5) or ""
+            for hh in HUNK_HEADER_DEF_RE.finditer(header_tail):
+                hints.add(hh.group(1) or hh.group(2))
             body_start = block.find("\n", hunk_m.end()) + 1
             body_end = hunks[i + 1].start() if i + 1 < len(hunks) else len(block)
             body = block[body_start:body_end]
@@ -155,7 +166,6 @@ def parse_modified_lines(patch_text: str) -> dict[str, set[int]]:
                     last_pre_seen = pre_line
                     pre_line += 1
                 elif tag == "+":
-                    # Insertion point: attribute to nearest preceding pre-image line.
                     if last_pre_seen is not None:
                         modified.add(last_pre_seen)
                     elif pre_line > src_start:
@@ -165,8 +175,7 @@ def parse_modified_lines(patch_text: str) -> dict[str, set[int]]:
                 elif tag == " ":
                     last_pre_seen = pre_line
                     pre_line += 1
-                # `\` (no newline at eof) and others: ignore
-    return result
+    return modified_by_file, hints_by_file
 
 
 def smallest_covering(db: sqlite3.Connection, file_path: str, line: int) -> str | None:
@@ -196,6 +205,45 @@ def fqn_resolves(db: sqlite3.Connection, fqn: str) -> bool:
     return row is not None
 
 
+def hint_to_fqn(db: sqlite3.Connection, file_path: str, hint: str) -> str | None:
+    """Look up `def hint` / `class hint` in `file_path`. Used when the
+    hunk's modified lines fall in a no-covering-symbol gap (typically a
+    patch that inserts a new method between existing methods of a class).
+    Returns the smallest matching symbol, or None.
+    """
+    placeholders = ",".join("?" * len(USEFUL_KINDS))
+    row = db.execute(
+        f"""SELECT fqn FROM symbols
+            WHERE file_path = ? AND name = ?
+              AND kind IN ({placeholders})
+            ORDER BY (end_line - start_line) ASC LIMIT 1""",
+        (file_path, hint, *USEFUL_KINDS),
+    ).fetchone()
+    if row is not None:
+        return row[0]
+    # Try leaf_name (Class::method form) as a fallback.
+    row = db.execute(
+        f"""SELECT fqn FROM symbols
+            WHERE file_path = ? AND leaf_name = ?
+              AND kind IN ({placeholders})
+            ORDER BY (end_line - start_line) ASC LIMIT 1""",
+        (file_path, hint, *USEFUL_KINDS),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def enclosing_class(db: sqlite3.Connection, fqn: str) -> str | None:
+    """If `fqn` is a method like `path::Class::method`, return `path::Class`."""
+    if "::" not in fqn:
+        return None
+    file_part, _, sym_part = fqn.partition("::")
+    if "::" not in sym_part:
+        return None
+    cls = sym_part.rsplit("::", 1)[0]
+    candidate = f"{file_part}::{cls}"
+    return candidate if fqn_resolves(db, candidate) else None
+
+
 def verify_task(task_path: Path) -> TaskVerify:
     data = tomllib.loads(task_path.read_text())
     task_id = data["id"]
@@ -214,23 +262,37 @@ def verify_task(task_path: Path) -> TaskVerify:
         out.error = "patch unavailable (HF fetch failed or empty)"
         return out
 
-    modified_by_file = parse_modified_lines(patch)
+    modified_by_file, hints_by_file = parse_modified_lines(patch)
     if not modified_by_file:
         out.error = "no .py files modified by patch (or parse failed)"
         return out
 
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        # Validate declared FQNs exist in the index.
         for fqn in declared:
             if not fqn_resolves(db, fqn):
                 out.unresolved_declared.add(fqn)
-        # Derive ground-truth fix sites from patch line ranges.
         for file_path, lines in modified_by_file.items():
+            file_truth: set[str] = set()
             for line in sorted(lines):
                 fqn = smallest_covering(db, file_path, line)
                 if fqn is not None:
-                    out.truth.add(fqn)
+                    file_truth.add(fqn)
+            # Fallback: if no covering function/method/class fired for this
+            # file, the patch likely inserts a new symbol between existing
+            # ones (django-16454 case). Use the hunk header's `def X` /
+            # `class X` hint, then walk up to the enclosing class — that's
+            # what the agent needs to see in pivots to make the fix.
+            if not file_truth:
+                for hint in hints_by_file.get(file_path, ()):
+                    hint_fqn = hint_to_fqn(db, file_path, hint)
+                    if hint_fqn:
+                        cls = enclosing_class(db, hint_fqn)
+                        # Prefer the enclosing class (intent target); the
+                        # method itself is just where the hunk sits in
+                        # pre-image.
+                        file_truth.add(cls or hint_fqn)
+            out.truth |= file_truth
     finally:
         db.close()
     return out
@@ -281,10 +343,34 @@ def render(results: list[TaskVerify]) -> str:
     return "\n".join(lines) + "\n"
 
 
+FIX_SITES_LINE_RE = re.compile(r"^fix_sites\s*=\s*\[[^\]]*\]\s*$", re.M)
+
+
+def apply_truth(toml_path: Path, truth: set[str]) -> None:
+    """Rewrite the `fix_sites = [...]` line of `toml_path` to match `truth`.
+
+    Preserves the rest of the TOML (comments, formatting). Sorted output for
+    deterministic diffs across runs.
+    """
+    text = toml_path.read_text()
+    new_line = "fix_sites = [" + ", ".join(f'"{f}"' for f in sorted(truth)) + "]"
+    new_text, n = FIX_SITES_LINE_RE.subn(new_line, text, count=1)
+    if n != 1:
+        raise RuntimeError(f"could not locate fix_sites line in {toml_path}")
+    toml_path.write_text(new_text)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--tasks", nargs="+", default=None, help="Verify only these task IDs.")
     p.add_argument("--strict", action="store_true", help="Exit non-zero on any non-MATCH.")
+    p.add_argument(
+        "--apply",
+        action="store_true",
+        help="Rewrite each non-MATCH task's `fix_sites = [...]` line to the truth set "
+             "derived from the patch + index. PARTIAL/WRONG only; ERROR/NO_TRUTH are "
+             "left alone. Run without --apply first to review the diff.",
+    )
     args = p.parse_args()
 
     paths = sorted(TASKS_DIR.glob("*.toml"))
@@ -294,6 +380,14 @@ def main() -> int:
 
     results = [verify_task(p) for p in paths]
     print(render(results))
+
+    if args.apply:
+        applied = 0
+        for r, path in zip(results, paths):
+            if r.status in ("PARTIAL", "WRONG") and r.truth:
+                apply_truth(path, r.truth)
+                applied += 1
+        print(f"\n## Applied truth to {applied} TOML(s); re-run verify to confirm.")
 
     out_dir = REPO_ROOT / "target" / "reverse_expand_panel"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -36,8 +36,7 @@ AttributeError: 'custom_coord' object has no attribute 'prop'
 ```
 """
 
-fix_sites = ["astropy/coordinates/sky_coordinate.py::__setattr__"]
-
+fix_sites = ["astropy/coordinates/sky_coordinate.py::SkyCoord::__getattr__"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

@@ -35,8 +35,7 @@ S2 = G.sylow_subgroup(p=2)
 
 """
 
-fix_sites = ["sympy/combinatorics/perm_groups.py::_number_blocks"]
-
+fix_sites = ["sympy/combinatorics/perm_groups.py::PermutationGroup::minimal_blocks"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

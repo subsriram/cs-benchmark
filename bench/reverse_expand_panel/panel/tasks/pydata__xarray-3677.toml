@@ -50,8 +50,7 @@ AttributeError: 'DataArray' object has no attribute 'items'
 
 """
 
-fix_sites = ["xarray/core/dataset.py::merge"]
-
+fix_sites = ["xarray/core/dataset.py::Dataset::merge"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

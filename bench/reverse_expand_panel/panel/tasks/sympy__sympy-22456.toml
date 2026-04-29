@@ -14,8 +14,7 @@ Currently, the `codegen.ast` `String` class does not support argument invariance
 The former should hold for any `Basic` subclass, which `String` is.
 """
 
-fix_sites = ["sympy/codegen/ast.py::String::_sympystr", "sympy/codegen/ast.py::String::kwargs", "sympy/codegen/ast.py::String::func"]
-
+fix_sites = ["sympy/codegen/ast.py::String"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.

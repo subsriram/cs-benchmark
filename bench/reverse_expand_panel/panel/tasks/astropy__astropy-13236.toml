@@ -48,8 +48,7 @@ This is not critical for 5.1 but if we have the opportunity due to other (critic
 cc: @mhvk
 """
 
-fix_sites = ["astropy/table/table.py::_convert_data_to_col"]
-
+fix_sites = ["astropy/table/table.py::Table::_convert_data_to_col"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.
