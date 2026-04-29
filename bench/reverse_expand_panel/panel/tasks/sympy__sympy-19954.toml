@@ -39,11 +39,11 @@ fix_sites = ["sympy/combinatorics/perm_groups.py::PermutationGroup::minimal_bloc
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "sympy/combinatorics/perm_groups.py::PermutationGroup"
 
 [category]
 anchor  = "traceback"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
+density = "dense"  # 100 direct dependents
                       # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
+hops    = "2-3"  # static flow has no path; fallback bucket
                       # `codesurgeon flow <strongest_anchor> <fix_site>`.

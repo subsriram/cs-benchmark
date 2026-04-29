@@ -72,11 +72,11 @@ fix_sites = ["astropy/io/fits/card.py::_format_float"]
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "astropy/io/fits/card.py::Card"
 
 [category]
 anchor  = "named_api"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
+density = "medium"  # 42 direct dependents
                       # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
+hops    = "2-3"  # static flow has no path; fallback bucket
                       # `codesurgeon flow <strongest_anchor> <fix_site>`.

@@ -60,11 +60,11 @@ fix_sites = ["astropy/io/ascii/rst.py::RST", "astropy/io/ascii/rst.py::RST::__in
 # TODO(human): set to the symbol the reverse-expand walk should seed from.
 # Usually an exception class or a user-named API call from `query`/`context`.
 # Leave empty to skip the impact-graph metric for this task.
-strongest_anchor = ""
+strongest_anchor = "astropy/io/ascii/rst.py::RST"
 
 [category]
 anchor  = "traceback"
-density = "unknown"   # TODO(human): sparse | medium | dense — count
+density = "sparse"  # 1 direct dependents
                       # `dependents(strongest_anchor)` in the indexed workspace.
-hops    = "unknown"   # TODO(human): 1 | "2-3" | "4+" — run
+hops    = "1"  # flow → 0 hops
                       # `codesurgeon flow <strongest_anchor> <fix_site>`.
