@@ -74,7 +74,19 @@ density = "dense"     # sparse | medium | dense
 hops    = 3           # 1 | "2-3" | "4+"
 ```
 
-The values for `density` and `hops` are derivable using the binary itself, against the warm workspace:
+The fastest path is the in-tree helper that does anchor-extraction + density + hops in one pass:
+
+```bash
+# Suggest values for every TOML missing strongest_anchor (dry-run; default).
+uv run bench/reverse_expand_panel/curate_anchors.py
+
+# Apply suggestions to TOMLs (review the dry-run output first).
+uv run bench/reverse_expand_panel/curate_anchors.py --apply
+```
+
+The helper picks the first anchor candidate from `codesurgeon anchors` that resolves in the index, computes density via `impact`, computes hops via `flow`. It's heuristic — review the suggestions before applying, especially when the anchor classifier returned `symptom_only` or the user-named class is buried in noise terms (`isinstance`, `len`, etc.).
+
+Manual derivation steps (used by the helper internally — runnable directly when the helper's pick is wrong):
 
 ```bash
 # Strongest anchor candidates — usually an exception class or a named API
@@ -107,6 +119,37 @@ Bucketing rule (from the design spec):
 | Field | Levels |
 |---|---|
 | `hops` | `1` (adjacent) / `"2-3"` / `"4+"` |
+
+### 2b'. Verify gold fix-sites (mandatory before trusting recall)
+
+The auto-extractor in `ingest_panel.py` is heuristic — it reads diff hunks and hunk-header `def` annotations to guess fix-site FQNs. On the first 20-task ingest, **60% of auto-declared fix-sites were wrong** (mostly missing class prefix, e.g. `request` instead of `Session::request`). Without verification, any recall metric is bogus.
+
+`verify_fix_sites.py` is the gate. For each task it:
+1. Fetches the gold patch from SWE-bench Verified (cached in `target/swebench-patches/`)
+2. Parses the patch to find pre-image lines modified per `.py` file
+3. For each modified line, queries the warm-workspace index for the smallest enclosing function/method/class — that's the ground-truth fix-site
+4. Compares against declared `fix_sites` and reports MATCH / PARTIAL / WRONG / NO_TRUTH / ERROR
+
+```bash
+# Review (dry-run): show every mismatch but don't change TOMLs
+uv run bench/reverse_expand_panel/verify_fix_sites.py
+
+# Apply: rewrite each non-MATCH task's `fix_sites = [...]` to the truth set
+uv run bench/reverse_expand_panel/verify_fix_sites.py --apply
+
+# Strict gate (CI-able): exit non-zero on any non-MATCH
+uv run bench/reverse_expand_panel/verify_fix_sites.py --strict
+```
+
+After `--apply`, re-run without `--apply` to confirm all MATCH. Output also written to `target/reverse_expand_panel/verify_fix_sites.txt` for post-hoc audit.
+
+What the verifier catches that the extractor misses:
+- Missing class prefix (`request` → `Session::request`)
+- Wrong method (extractor walked into a closure or sibling)
+- Missing fix-sites (patch touches multiple symbols, declared only one)
+- Patch inserts a new method between class methods (no covering symbol; falls back to enclosing class via hunk-header hint)
+
+What it can't catch (rare): semantically-equivalent edits where the extractor names a wrapper but truth is the wrapped function — same line numbers, different symbol identity. Manual inspection only.
 
 ### 2c. Verify warm workspaces exist
 
@@ -288,7 +331,110 @@ Diff the headline + heatmap to see what moved.
 | `fix_site_in_pivots: false` everywhere but the fix is "obviously" relevant | The fix-site FQN format from the gold patch may not match what codesurgeon emits (e.g. method vs. function path separators) | Inspect `matched_fix_site` field — `null` means no match attempt succeeded. Adjust the gold FQN in the task TOML. |
 | Run takes >>30 min | Either workspaces are cold (re-indexing per call) or `IMPACT_TIMEOUT_S` is being hit | Check `wall_ms` distribution in the JSONL; warm-index workspaces ahead of time |
 
-## 9. What this doesn't measure
+## 9. Resumption: after engine changes
+
+When picking up the panel after a codesurgeon engine change (or after time away), this is the sequence. The current panel state is captured in [`reverse_expand_panel_findings.md`](reverse_expand_panel_findings.md); start there for what's been measured and what's still open.
+
+### Current state (snapshot)
+
+- 20 tasks committed under `bench/reverse_expand_panel/panel/tasks/`, distributed across 11 `(anchor × density × hops)` cells
+- All 20 fix-sites verified by `verify_fix_sites.py` against gold patches — every modified line in the gold is covered by the declared fix-site set
+- `strongest_anchor` / `density` / `hops` curated for all 20 against warm workspaces
+- 15 variants in `panel/variants.toml`: 8 strategies × `auto` direction + (v2/v3a/v3b) × {forward, both, reverse_only}
+- Last result: `target/reverse_expand_panel/20260429-1629-20task.jsonl` (gitignored under `target/`; rerun to regenerate)
+- Recommendation deliverable: [`reverse_expand_panel_findings.md`](reverse_expand_panel_findings.md) (in-tree mirror of [codesurgeon#69 comment-4347417418](https://github.com/subsriram/codesurgeon/issues/69#issuecomment-4347417418))
+
+### Trigger conditions for re-evaluation
+
+The panel should be re-run when **any** of these happens:
+
+| Trigger | Why | What changes |
+|---|---|---|
+| codesurgeon ships per-seed RRF list split (open in [#96](https://github.com/subsriram/codesurgeon/issues/96)) | Current expand variants leave 7 of 20 tasks at 0% across all variants; per-seed RRF should unstick at least 2-3 of them | v3 family may flip from "niche" to "ship as default" — the [findings.md](reverse_expand_panel_findings.md) recommendation may need revision |
+| New `CS_EXPAND_STRATEGY` variants added to `ranking.rs` | New variants need ablation against the existing matrix | Add new `[variants.<id>]` blocks to `panel/variants.toml`; re-run |
+| Embedding model changed (`v2` strategy) | `v2` uses semantic similarity for fan-out — new model = different ranking | Re-run; v2-related variants will move |
+| Anchor extraction logic in `crates/cs-core/src/anchors.rs` changed | Different anchor sets → different seeds → different walks | Re-run; might also need to re-curate `strongest_anchor` for some tasks |
+| Adding tasks beyond 20 | Per-cell n grows; previously single-task cells become more reliable | Curate new tasks per §2; re-run; compare to previous result file |
+
+### The re-run procedure (one binary update → fresh data)
+
+```bash
+cd ~/projects/cs-benchmark
+git pull
+
+# 1. New binary in place
+cp ~/projects/codesurgeon/target/release/codesurgeon target/release/
+cp ~/projects/codesurgeon/target/release/codesurgeon-mcp target/release/
+target/release/codesurgeon --version  # confirm sha changed
+
+# 2. Verify gold still matches (existing TOMLs against new index — should
+#    be no-op unless symbol naming convention changed)
+uv run bench/reverse_expand_panel/verify_fix_sites.py --strict
+# expected: 20/20 MATCH; if not, the leaf_name / FQN convention shifted
+
+# 3. Run the full panel
+CODESURGEON_BIN=$PWD/target/release/codesurgeon \
+uv run bench/reverse_expand_panel/run_panel.py \
+  --run-id $(date +%Y%m%d-%H%M)-<descriptive-suffix>
+
+# 4. Render report — diff against the prior run-id
+uv run bench/reverse_expand_panel/report.py \
+  target/reverse_expand_panel/20260429-1629-20task.jsonl \
+  target/reverse_expand_panel/<new-run-id>.jsonl \
+  --baseline none
+
+# 5. Update findings.md if recall moved meaningfully (i.e. a variant flipped
+#    win/loss vs. baseline on >=2 tasks). The GH-side mirror on #69 should
+#    also be updated — link points here.
+```
+
+### What to look for in the new results
+
+The cells most likely to move on a per-seed RRF or similar engine change:
+
+| Task | Expected to flip | Why |
+|---|---|---|
+| matplotlib-24177 | `fix_site_in_pivots: True` for v3-forward variants | static forward path `Axes::hist → fill → add_patch → _update_patch_limits` exists; per-seed RRF should keep `Axes::hist`'s subtree from being outranked by `pyplot::hist`'s wrapper noise |
+| django-16938 | same | similar shape: `handle_m2m_field` chain |
+| sklearn-25102 | already True on v3; may extend to v2-family | only v3 reaches it currently |
+
+Tasks that **shouldn't** move from any RRF or fusion change:
+
+| Task | Why won't move | What would |
+|---|---|---|
+| sympy-21379 | reverse-shaped; needs the ranking that pulls `Mod::eval` from depth-2 reverse-walk; no static forward path (anchor `PolynomialError` doesn't *call* anything) | A different ranking signal that rewards reverse-walk emissions, OR a query-aware classifier that picks reverse-only on this query shape |
+| astropy-13236 / pytest-7236 | graph indirection (registry callbacks, dynamic dispatch) | A heuristic for runtime dispatch patterns; out of scope for static-graph retrieval |
+| astropy-14309 | registry callback (`self._identifiers[(fmt, cls)]`) is not a static call edge | Same |
+
+### Scaling the panel
+
+To grow beyond 20 tasks:
+
+```bash
+# Pick + ingest more candidates
+uv run bench/reverse_expand_panel/ingest_panel.py <id1> <id2> ...
+
+# Build warm workspaces (long; ~15 min each)
+for iid in <id1> <id2> ...; do
+  benches/swebench/prepare_workspace.sh "$iid"
+done
+
+# Verify gold (catches extractor bugs)
+uv run bench/reverse_expand_panel/verify_fix_sites.py --apply
+uv run bench/reverse_expand_panel/verify_fix_sites.py --strict
+
+# Curate strongest_anchor / density / hops
+uv run bench/reverse_expand_panel/curate_anchors.py --apply
+
+# Re-run
+CODESURGEON_BIN=$PWD/target/release/codesurgeon \
+uv run bench/reverse_expand_panel/run_panel.py \
+  --run-id $(date +%Y%m%d-%H%M)-<descriptive-suffix>
+```
+
+Targeting unfilled cells (the 16 currently empty ones) gives more signal than adding tasks to already-occupied cells. The design spec lists the 27-cell grid — see §"Stratification".
+
+## 10. What this doesn't measure
 
 Stating it explicitly so it isn't conflated with what the panel claims:
 
@@ -296,4 +442,4 @@ Stating it explicitly so it isn't conflated with what the panel claims:
 - **Does not** measure prompt quality, claude version, or MCP transport health.
 - **Does not** measure whether the agent would have *found* the fix once the capsule contains it. That's a downstream question.
 
-The panel measures one thing: does the gold fix site land in the capsule (or one chained `impact` call away)? Answers to "should we ship this ranking change?" should be triangulated with at least one agent-loop SWE-bench run before merging — see `benches/swebench/run.py`.
+The panel measures: does the gold fix site land in the capsule (`fix_site_in_pivots` / `_in_skeletons`) or one chained MCP call away (`fix_site_in_impact` for the reverse direction; `fix_site_in_forward_reach` for the forward direction)? Answers to "should we ship this ranking change?" should be triangulated with at least one agent-loop SWE-bench run before merging — see `benches/swebench/run.py`.
