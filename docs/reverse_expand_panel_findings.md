@@ -1,6 +1,6 @@
 # Reverse-Expand Diagnostic Panel — current findings
 
-**Status:** snapshot as of `codesurgeon 1.0.0 (sha 3e6c379b57f8, built 2026-04-29T13:49:13Z)` against the 20-task / 11-cell panel. Run id: `20260429-1629-20task`.
+**Status:** snapshot as of `codesurgeon 1.0.0 (sha 0d5e627a8956, built 2026-04-30T00:55:31Z)` against the 20-task / 11-cell panel. Most-recent run id: `20260429-2059-per-seed-rrf` (post-#96 per-seed RRF list split). Recommendation unchanged from prior snapshot (`3e6c379b57f8` — depth-stratified RRF).
 
 **Audience:** anyone deciding which `CS_EXPAND_STRATEGY` × `CS_EXPAND_DIRECTION` to ship as a default, or evaluating whether codesurgeon's reverse/forward expand machinery has earned its place.
 
@@ -61,18 +61,25 @@ The verdict:
 - **They also don't help on tasks where they were supposed to.** On the `dense` density cells the v1 work was tuned for, `none` is at 0% or 100% — the v1 variants don't move the needle.
 - **The 7 tasks stuck at 0% across every variant** include 4 with verified static forward paths from anchor to fix-site. They're reachable in principle; they don't land in pivots due to per-seed RRF dilution (open in [#96](https://github.com/subsriram/codesurgeon/issues/96)).
 
-## Engine work that would change the picture
+## Engine work history + what would change the picture
 
-[codesurgeon#96](https://github.com/subsriram/codesurgeon/issues/96) tracks the open per-seed RRF list split. The current `EXPAND_DEEP_RRF_K=8` change splits the deep emissions into a single re-weighted list, but multiple seeds compete in that list — `pyplot::hist`'s caller-side helpers outrank `Axes::hist`'s real chain by virtue of being reachable from more seeds.
+| Engine sha | Engine work | Panel result |
+|---|---|---|
+| `3e6c379b57f8` | Depth-stratified RRF (`EXPAND_DEEP_RRF_K=8` for depth ≥ 2) | All v3-family variants tied; chain in emissions but not pivots |
+| **`0d5e627a8956` (current)** | Per-seed RRF list split — each seed gets its own deep list at k=8, no cross-seed competition in fusion | **No headline flip.** v3 variants gain ~5-10pp on skeletons but lose ~5-15pp on pivots (chain demoted from pivot to skeleton on a few cells). matplotlib-24177 + django-16938 (the predicted forward-flip cases) stay False on `fix_site_in_pivots`. |
 
-When per-seed RRF lands, expect at least these tasks to move:
-- **matplotlib-24177** (forward chain `Axes::hist → fill → add_patch → _update_patch_limits`) — should land in v3-family forward variants
-- **django-16938** (forward chain `handle_m2m_field → ... → queryset.iterator`) — same shape
-- Possibly **sklearn-25102** under v2-family forward (currently only v3 reaches it)
+Per-seed RRF was the right step for the cross-seed-dilution bottleneck (verified — `pyplot::hist` correctly contributes 0 deep emissions to its own list, no longer dilutes `Axes::hist`'s chain). The remaining bottleneck is **intra-seed depth dilution**: even within `Axes::hist`'s own deep list, the priority queue at depth-2 favors siblings over `add_patch`'s children, so `_update_patch_limits` doesn't make it into the depth-3 emissions despite the walker reaching that depth.
 
-If those flip, the recommendation flips:
+### Next engine work — would unstick more cells
+
+The bottleneck on `0d5e627a8956` is the priority signal inside `expand_best_first`. Two non-mutually-exclusive ideas surfaced in the [#96 thread](https://github.com/subsriram/codesurgeon/issues/96#issuecomment-4348890291):
+
+1. **Depth-continuation bonus**: when popping a node at depth N whose parent was popped at high priority, give the children a small priority bonus so chain depth doesn't compete with breadth at the same depth from a different parent.
+2. **Per-tree-node UCB**: track popped/unpopped within each parent's children separately, so unpopped children of high-priority parents get an exploration bonus.
+
+If either lands and unsticks matplotlib-24177 (the cleanest probe — 4-hop chain, anchor extraction correct, priority is the only thing in the way), the recommendation may flip:
 - v3 family (with the `auto` classifier fixed) becomes a real default candidate
-- v0/v1/v2 still strict regressions; deprecate them from variants.toml
+- v0/v1/v2 still strict regressions; deprecate from variants.toml
 - `none` becomes "fallback for queries without strong anchor extraction"
 
 The runbook's [Resumption section](reverse_expand_panel_runbook.md#resumption-after-engine-changes) has the trigger condition + re-run procedure.
@@ -86,7 +93,8 @@ The runbook's [Resumption section](reverse_expand_panel_runbook.md#resumption-af
 | Gold fix-sites | All 20 verified by [`verify_fix_sites.py`](../bench/reverse_expand_panel/verify_fix_sites.py) — every modified line in the gold patch is covered by the declared fix-site set. Initial auto-extraction had 60% wrong (missing class prefix etc.); all corrected. |
 | `strongest_anchor` / `density` / `hops` | Hand-curated against warm workspace via `anchors / impact / flow` (see runbook §2b) |
 | Forward-reach metric | Mirrors `fix_site_in_impact` for callee direction — uses `flow strongest_anchor fix_site` (variant-invariant per task) |
-| Result file | `target/reverse_expand_panel/20260429-1629-20task.jsonl` (300 rows) |
+| Result file (current) | `target/reverse_expand_panel/20260429-2059-per-seed-rrf.jsonl` (300 rows, sha `0d5e627a8956`) |
+| Result file (prior — depth-stratified RRF) | `target/reverse_expand_panel/20260429-1629-20task.jsonl` (300 rows, sha `3e6c379b57f8`) |
 
 ## What this doesn't measure
 
