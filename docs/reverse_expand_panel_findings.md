@@ -96,47 +96,56 @@ The runbook's [Resumption section](reverse_expand_panel_runbook.md#resumption-af
 | Result file (current) | `target/reverse_expand_panel/20260429-2059-per-seed-rrf.jsonl` (300 rows, sha `0d5e627a8956`) |
 | Result file (prior — depth-stratified RRF) | `target/reverse_expand_panel/20260429-1629-20task.jsonl` (300 rows, sha `3e6c379b57f8`) |
 
-## Agent-loop corroboration on sympy-21379
+## Agent-loop corroboration (3 tasks)
 
-A single agent-loop run on the canonical adversarial fixture corroborates the panel-level recommendation. Run setup: `codesurgeon ba72ca19e9c6` (post-#101 graph fixes, post-#126 schema fix), **strategy = `none`** (the only one shipped in this binary; the experimental v0/v1*/v2/v3* variants and `CS_EXPAND_DIRECTION` axis are gated out post-#97), fresh re-index of the sympy-21379 warm workspace, `claude-opus-4-7[1m]`, $1 budget cap.
+The panel measures *retrieval recall*, not agent-loop *outcomes*. To check that the recommendation tracks downstream behavior, ran agent-loop probes on three tasks against the shipped binary `codesurgeon ba72ca19e9c6` (post-#101 graph fixes, post-#126 schema fix). **Setup**: strategy=`none` (the only one in the shipped binary, post-#97; the experimental v0/v1*/v2/v3* and `CS_EXPAND_DIRECTION` axis are gated out), fresh per-task re-index, `claude-opus-4-7[1m]` with $1 budget cap, `claude.md` 5b verbatim-forward nudge.
 
-| Arm | walltime | cost | turns | output tokens | diff | succeeded? |
-|---|---:|---:|---:|---:|---:|---|
-| `without` (bare claude, pilot) | 96.5s | $0.297 | n/a | 4,363 | 610B | ✓ adds import + try/except, smaller scope |
-| `with` (codesurgeon `none`, attempt 1) | 137.6s | $1.003 (cap) | 27 | 7,392 | 728B | ✗ correct scope, missing import → NameError at runtime |
-| `with` (codesurgeon `none`, attempt 2) | 132.8s | $0.995 (cap) | 27 | 7,587 | **1,070B** | **✓ identical to gold patch** |
+| Task (cell) | Arm | walltime | cost | tool calls | diff | result |
+|---|---|---:|---:|---:|---:|---|
+| **psf-requests-1724** (named_api/sparse/1) | with | 42.4s | **$0.578** | (n/a) | 530B | ✓ correct fix |
+|  | without | 21.8s | **$0.207** | (n/a) | 530B | ✓ identical fix |
+| **sympy-21379** (symptom_only/dense/2-3) | with (attempt 2) | 132.8s | **$0.995** (cap) | ~100+ (27 turns) | 1,070B | ✓ identical to gold |
+|  | with (attempt 1) | 137.6s | **$1.003** (cap) | ~100+ (27 turns) | 728B | ✗ broken (missing import) |
+|  | without (pilot) | 96.5s | **$0.297** | n/a | 610B | ✓ correct, smaller scope |
+| **matplotlib-24177** (symptom_only/dense/2-3, forward-shape) | with | 362.5s | **$1.218** (cap) | 17 | **0 B** | ✗ budget cap hit before Edit |
+|  | without | 200.7s | **$1.068** (cap) | 23 | **0 B** | ✗ budget cap hit before Edit |
 
-Three facts converge:
+### Did the codesurgeon capsule contain the fix-site?
 
-**1. This run is `none` — no reverse-expand walk happened.** `none` retrieval is BM25 + ANN + anchor-extraction only. The shipped binary doesn't expose the experimental v0/v1*/v2/v3* strategies, so this single agent-loop datapoint is *only* about the shipped baseline; it's not testing reverse-expand in any form.
+| Task | Anchor in problem statement | Fix site | In `none` capsule? |
+|---|---|---|---|
+| psf-requests-1724 | `Session.request` | `Session::request` (anchor IS fix site) | ✓ trivially |
+| sympy-21379 | `PolynomialError`, `Piecewise`, `subs` | `Mod::eval` (different module) | ✗ capsule got `Piecewise`/`Subs`/`BasePolynomialError` etc. — `Mod::eval` and `mod.py` entirely absent |
+| matplotlib-24177 | `ax.hist` | `_AxesBase::_update_patch_limits` (3 hops down) | ✗ capsule got `Axes::hist` ✓ but not the fix site |
 
-**2. The `none` capsule for sympy-21379 doesn't contain the fix site.** Direct probe of `codesurgeon context` (strategy `none`) against the fresh sympy index, with the actual problem statement as `--context`:
+**Two distinct retrieval failure modes on the harder cases:**
 
-```
-pivots (8, 3,488/4,000 budget tokens):
-  test_unexpected_exception_is_passed_through_with     (test file)
-  Piecewise                                             (user-named symptom)
-  DMP::all_terms                                        (irrelevant)
-  Poly::all_terms                                       (irrelevant)
-  test_pickling_polys_errors                            (test file)
-  Subs                                                  (user-named symptom)
-  BasePolynomialError                                   (parent class — not the actual exception)
-  PolynomialDivisionFailed                              (wrong subclass)
+- **sympy-21379**: BM25 + ANN + anchor-extraction surfaces lexically/semantically near symbols (`Piecewise`, `Subs`, `BasePolynomialError`) but `Mod::eval` shares no tokens with the problem statement. **Not** a graph-walk problem (the panel showed reverse-expand variants also miss this — Mod::eval calls `gcd`, which calls things that *raise* PolynomialError; reverse-walks from the symptom go to *raisers*, not to *upstream callers of raisers*). Two different mechanisms, same outcome.
 
-Mod::eval         absent
-sympy/core/mod.py absent  ← entire file containing the fix
-gcd, gcd_terms    absent
-```
+- **matplotlib-24177**: `Axes::hist` does land in pivots (lexical match) — codesurgeon's signal IS useful here, the agent walked from `Axes::hist` to `_update_patch_limits` in 1 grep instead of dozens of file walks (`with` did 17 tool calls vs `without`'s 23). But `none` can't traverse the 3-hop forward chain, so the fix site itself isn't surfaced.
 
-The pivots are exactly what BM25 + ANN would surface from the problem statement: `Piecewise` and `Subs` are lexically named in the bug report; `BasePolynomialError` and `PolynomialDivisionFailed` are semantically near `PolynomialError`; the test files have words from the problem statement. None of these point at `Mod::eval`.
+### Cost-comparison trend across the 3 tasks
 
-This is **not** the same failure mode as reverse-expand on this task. The panel showed reverse-expand variants also produced `fix_site_in_pivots: 0` on sympy-21379, but for a different reason: the static graph doesn't connect `PolynomialError` to `Mod::eval` (Mod::eval calls `gcd`, which calls things that *raise* PolynomialError — a reverse-walk from the symptom goes to *raisers*, not to *upstream callers of raisers*). Two different mechanisms, same outcome on this task: capsule misses the fix.
+| Task | with cost | without cost | with/without ratio |
+|---|---:|---:|---:|
+| psf-requests-1724 | $0.578 | $0.207 | **2.8×** |
+| sympy-21379 | $1.000 | $0.297 | **3.4×** |
+| matplotlib-24177 | $1.218 | $1.068 | **1.1×** |
 
-**3. The agent's `with`-arm "success" comes from doing the same exploratory work bare claude does.** Across 27 turns, the agent makes many file Reads regardless of whether codesurgeon is in the loop — because the `none` capsule didn't point at `mod.py`. The codesurgeon overhead is a 3,488-token irrelevant capsule that costs cache-creation/cache-read tokens to maintain across turns, with zero offsetting benefit. Cost is 3.4× higher; outcome quality is non-deterministic (one attempt produces gold, one produces broken-fix).
+Codesurgeon's `with` arm is **consistently more expensive** than `without` across all three tasks — by 2.8×, 3.4×, and 1.1×. The matplotlib gap closes only because both arms hit the budget cap (so the with-arm's overhead doesn't dominate). The cost overhead lives in cache-creation/cache-read tokens replayed across turns: every turn re-reads the codesurgeon capsule + tool descriptions even when those don't help.
 
-The panel's recommendation ("stay on `none`") is reinforced from a different angle here. The panel was about *which expand variant to ship over `none`* and concluded "none of them"; this agent-loop run is about *whether `none` itself adds enough value to justify codesurgeon's overhead on this bug shape* and concludes **no, on this task it doesn't**. That's a related but distinct claim — and it shifts the question from "tune the variants" to "tune retrieval anchoring so `none` actually finds upstream callers when the user names a symptom."
+**Quality outcomes** are mixed but never net-favor `with`:
+- psf-requests-1724: tied (both produced same correct fix)
+- sympy-21379: with-arm non-deterministic (1 of 2 attempts produced broken fix; the other matched gold). without-arm produced correct fix in single attempt at 1/3 the cost.
+- matplotlib-24177: both arms failed (budget cap)
 
-**Generalization caveat:** n=1 task, 2 attempts. Not a scaled study. The canonical adversarial fixture from the #69 thread is the right single-task probe for "where codesurgeon should plausibly earn its keep" — and on this binary's `none` it doesn't, even though the agent eventually solves the bug. A scaled `with`/`without` sweep on multiple tasks (and ideally rerun once an experimental binary with v0/v1*/v2/v3* re-exposed lands) would be needed before drawing a stronger conclusion.
+### What this means
+
+The panel-level recommendation ("stay on `none` over expand variants") generalizes one step further at the agent-loop layer: **on these three bug shapes, codesurgeon's `none` itself adds enough overhead to make the with-arm strictly worse than bare-Claude.** The codesurgeon capsule helps retrieval (matplotlib evidence: -26% tool calls) but not enough to pay for its prompt-cache overhead.
+
+This shifts the open question. Before: "which expand variant would beat `none`?" Now: **"can codesurgeon's `none` retrieval be made cheap enough — or accurate enough at finding upstream callers — that it earns its place at the agent layer at all?"**
+
+**Generalization caveat:** n=3 tasks, single attempts (sympy had 2). Not a scaled study. These three tasks span the panel's hardest cells (and one trivial one) — a representative slice but not statistical proof. A 20-task agent-loop sweep with $2-3 budget cap would close the question. Cost: ~$60-100. The 3-task probe is enough to call the direction.
 
 ## What this doesn't measure
 
