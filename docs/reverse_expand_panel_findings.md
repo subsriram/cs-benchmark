@@ -96,11 +96,62 @@ The runbook's [Resumption section](reverse_expand_panel_runbook.md#resumption-af
 | Result file (current) | `target/reverse_expand_panel/20260429-2059-per-seed-rrf.jsonl` (300 rows, sha `0d5e627a8956`) |
 | Result file (prior — depth-stratified RRF) | `target/reverse_expand_panel/20260429-1629-20task.jsonl` (300 rows, sha `3e6c379b57f8`) |
 
+## Agent-loop corroboration (3 tasks)
+
+The panel measures *retrieval recall*, not agent-loop *outcomes*. To check that the recommendation tracks downstream behavior, ran agent-loop probes on three tasks against the shipped binary `codesurgeon ba72ca19e9c6` (post-#101 graph fixes, post-#126 schema fix). **Setup**: strategy=`none` (the only one in the shipped binary, post-#97; the experimental v0/v1*/v2/v3* and `CS_EXPAND_DIRECTION` axis are gated out), fresh per-task re-index, `claude-opus-4-7[1m]` with $1 budget cap, `claude.md` 5b verbatim-forward nudge.
+
+| Task (cell) | Arm | walltime | cost | tool calls | diff | result |
+|---|---|---:|---:|---:|---:|---|
+| **psf-requests-1724** (named_api/sparse/1) | with | 42.4s | **$0.578** | (n/a) | 530B | ✓ correct fix |
+|  | without | 21.8s | **$0.207** | (n/a) | 530B | ✓ identical fix |
+| **sympy-21379** (symptom_only/dense/2-3) | with (attempt 2) | 132.8s | **$0.995** (cap) | ~100+ (27 turns) | 1,070B | ✓ identical to gold |
+|  | with (attempt 1) | 137.6s | **$1.003** (cap) | ~100+ (27 turns) | 728B | ✗ broken (missing import) |
+|  | without (pilot) | 96.5s | **$0.297** | n/a | 610B | ✓ correct, smaller scope |
+| **matplotlib-24177** (symptom_only/dense/2-3, forward-shape) | with | 362.5s | **$1.218** (cap) | 17 | **0 B** | ✗ budget cap hit before Edit |
+|  | without | 200.7s | **$1.068** (cap) | 23 | **0 B** | ✗ budget cap hit before Edit |
+
+### Did the codesurgeon capsule contain the fix-site?
+
+| Task | Anchor in problem statement | Fix site | In `none` capsule? |
+|---|---|---|---|
+| psf-requests-1724 | `Session.request` | `Session::request` (anchor IS fix site) | ✓ trivially |
+| sympy-21379 | `PolynomialError`, `Piecewise`, `subs` | `Mod::eval` (different module) | ✗ capsule got `Piecewise`/`Subs`/`BasePolynomialError` etc. — `Mod::eval` and `mod.py` entirely absent |
+| matplotlib-24177 | `ax.hist` | `_AxesBase::_update_patch_limits` (3 hops down) | ✗ capsule got `Axes::hist` ✓ but not the fix site |
+
+**Two distinct retrieval failure modes on the harder cases:**
+
+- **sympy-21379**: BM25 + ANN + anchor-extraction surfaces lexically/semantically near symbols (`Piecewise`, `Subs`, `BasePolynomialError`) but `Mod::eval` shares no tokens with the problem statement. **Not** a graph-walk problem (the panel showed reverse-expand variants also miss this — Mod::eval calls `gcd`, which calls things that *raise* PolynomialError; reverse-walks from the symptom go to *raisers*, not to *upstream callers of raisers*). Two different mechanisms, same outcome.
+
+- **matplotlib-24177**: `Axes::hist` does land in pivots (lexical match) — codesurgeon's signal IS useful here, the agent walked from `Axes::hist` to `_update_patch_limits` in 1 grep instead of dozens of file walks (`with` did 17 tool calls vs `without`'s 23). But `none` can't traverse the 3-hop forward chain, so the fix site itself isn't surfaced.
+
+### Cost-comparison trend across the 3 tasks
+
+| Task | with cost | without cost | with/without ratio |
+|---|---:|---:|---:|
+| psf-requests-1724 | $0.578 | $0.207 | **2.8×** |
+| sympy-21379 | $1.000 | $0.297 | **3.4×** |
+| matplotlib-24177 | $1.218 | $1.068 | **1.1×** |
+
+Codesurgeon's `with` arm is **consistently more expensive** than `without` across all three tasks — by 2.8×, 3.4×, and 1.1×. The matplotlib gap closes only because both arms hit the budget cap (so the with-arm's overhead doesn't dominate). The cost overhead lives in cache-creation/cache-read tokens replayed across turns: every turn re-reads the codesurgeon capsule + tool descriptions even when those don't help.
+
+**Quality outcomes** are mixed but never net-favor `with`:
+- psf-requests-1724: tied (both produced same correct fix)
+- sympy-21379: with-arm non-deterministic (1 of 2 attempts produced broken fix; the other matched gold). without-arm produced correct fix in single attempt at 1/3 the cost.
+- matplotlib-24177: both arms failed (budget cap)
+
+### What this means
+
+The panel-level recommendation ("stay on `none` over expand variants") generalizes one step further at the agent-loop layer: **on these three bug shapes, codesurgeon's `none` itself adds enough overhead to make the with-arm strictly worse than bare-Claude.** The codesurgeon capsule helps retrieval (matplotlib evidence: -26% tool calls) but not enough to pay for its prompt-cache overhead.
+
+This shifts the open question. Before: "which expand variant would beat `none`?" Now: **"can codesurgeon's `none` retrieval be made cheap enough — or accurate enough at finding upstream callers — that it earns its place at the agent layer at all?"**
+
+**Generalization caveat:** n=3 tasks, single attempts (sympy had 2). Not a scaled study. These three tasks span the panel's hardest cells (and one trivial one) — a representative slice but not statistical proof. A 20-task agent-loop sweep with $2-3 budget cap would close the question. Cost: ~$60-100. The 3-task probe is enough to call the direction.
+
 ## What this doesn't measure
 
 Per the design spec — restating because it bears on how the recommendation should be applied:
 
-- **Agent behavior**: the agent never runs. A variant that "lifts retrieval" may or may not let the agent succeed downstream. Triangulate with `benches/swebench/run.py` before merging any default change.
+- **Agent behavior at scale**: only the single sympy-21379 datapoint in the prior section actually runs the agent. A panel-wide agent-loop sweep would still be needed before shipping any default change; what's here only confirms the recommendation isn't directly contradicted by the canonical hard task.
 - **Cold-start cost**: the panel runs on warm workspaces. First-run capsule generation may amortize differently.
 - **Cell coverage gaps**: 16 of 27 cells in the design grid are empty. The recommendation may not generalize to bug shapes those cells represent.
 - **The `4+ hops` cell is structurally absent** from the panel — the static flow walker either resolves a path within depth 3 or returns no path (graph indirection); neither produces a `4+` bucket. If shipped engine-side support exists for chains beyond depth 3, the panel will need a different way to identify those tasks.

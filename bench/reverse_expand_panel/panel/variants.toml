@@ -1,82 +1,80 @@
-# Reverse-expand strategy + direction variants exercised by `run_panel.py`.
+# Variants exercised by `run_panel.py`.
 #
-# Two orthogonal axes, both env-gated in the codesurgeon engine:
+# As of codesurgeon@ffffa055 (post PR #97 — "universally-useful subset"),
+# only `none` ships in the released binary. The experimental v0/v1*/v2/v3*
+# strategies and CS_EXPAND_DIRECTION axis (issues #69, #95, #96) live in
+# branches but are gated out of the shipped CLI. Running them against this
+# binary produces identical rows for every variant — wasted budget.
 #
-#   strategy  → CS_EXPAND_STRATEGY  (how to rank candidates within a walk)
-#              ranking.rs::ExpandStrategy: none/v0/v1a/v1b/v1ab/v2/v3a/v3b
+# This file is therefore reduced to `none` so panel runs reflect what end
+# users actually have. The full variant set is preserved below as comments
+# so it can be re-enabled when the strategy/direction env-var gates ship
+# again (probably as part of an explicit feature-flag rollout).
 #
-#   direction → CS_EXPAND_DIRECTION         (which direction to walk for each anchor)
-#              ranking.rs::ExpandDirection:    auto/forward/reverse/both
-#
-# `auto` defers to the per-anchor classifier (kind + fan-out ratio).
-# Issue #95.
-#
-# Default `direction = "auto"` — entries below that omit it use auto.
+# When variants come back: uncomment the blocks below and re-run.
 
-# ── Strategy axis (current main behavior — auto direction) ───────────────────
+# ── Active variants (shipped binary) ──────────────────────────────────────
 
 [variants.none]
 strategy = "none"
 
-[variants.v0]
-strategy = "v0"
-
-[variants.v1a]
-strategy = "v1a"
-
-[variants.v1b]
-strategy = "v1b"
-
-[variants.v1ab]
-strategy = "v1ab"
-
-[variants.v2]
-strategy = "v2"
-
-[variants.v3a]
-strategy = "v3a"
-
-[variants.v3b]
-strategy = "v3b"
-
-# ── Direction axis (#95) — strategy held at v2, direction varies ─────────────
-
-[variants.v2_reverse_only]
-strategy  = "v2"
-direction = "reverse"
-
-[variants.v2_forward_only]
-strategy  = "v2"
-direction = "forward"
-
-[variants.v2_both]
-strategy  = "v2"
-direction = "both"
-
-# Best-first walkers paired with forward / both — the BFS variants
-# above can't reach depth-3 chains on dense graphs (the top-5
-# fan-out trim drops intermediate hops); v3a/v3b have separate
-# expand and emit budgets so the walk can spend depth on a
-# promising chain. Ablation request: matplotlib hist →
-# _update_patch_limits is 3 hops; v2_forward_only can't see it
-# at any capsule budget. v3a_forward_only / v3b_forward_only
-# should — that's the test these variants exist for.
-
-[variants.v3a_forward_only]
-strategy  = "v3a"
-direction = "forward"
-
-[variants.v3b_forward_only]
-strategy  = "v3b"
-direction = "forward"
-
-[variants.v3a_both]
-strategy  = "v3a"
-direction = "both"
-
-[variants.v3b_both]
-strategy  = "v3b"
-direction = "both"
-
-# Implicit `direction = "auto"` for the bare `v2` above — that's the
-# baseline the directional variants compare against.
+# ── Preserved for re-enablement when strategy/direction gates ship ───────
+#
+# # Strategy axis — CS_EXPAND_STRATEGY (how to rank within a walk)
+# #   ranking.rs::ExpandStrategy: none/v0/v1a/v1b/v1ab/v2/v3a/v3b
+# # `auto` defers to the per-anchor classifier (kind + fan-out ratio). Issue #95.
+# # Default `direction = "auto"` — entries below that omit it use auto.
+#
+# [variants.v0]
+# strategy = "v0"
+#
+# [variants.v1a]
+# strategy = "v1a"
+#
+# [variants.v1b]
+# strategy = "v1b"
+#
+# [variants.v1ab]
+# strategy = "v1ab"
+#
+# [variants.v2]
+# strategy = "v2"
+#
+# [variants.v3a]
+# strategy = "v3a"
+#
+# [variants.v3b]
+# strategy = "v3b"
+#
+# # Direction axis (#95) — strategy held at v2, direction varies
+#
+# [variants.v2_reverse_only]
+# strategy  = "v2"
+# direction = "reverse"
+#
+# [variants.v2_forward_only]
+# strategy  = "v2"
+# direction = "forward"
+#
+# [variants.v2_both]
+# strategy  = "v2"
+# direction = "both"
+#
+# # Best-first walkers paired with forward / both — for the chain-depth
+# # bottleneck investigation in #96.
+#
+# [variants.v3a_forward_only]
+# strategy  = "v3a"
+# direction = "forward"
+#
+# [variants.v3b_forward_only]
+# strategy  = "v3b"
+# direction = "forward"
+#
+# [variants.v3a_both]
+# strategy  = "v3a"
+# direction = "both"
+#
+# [variants.v3b_both]
+# strategy  = "v3b"
+# direction = "both"
